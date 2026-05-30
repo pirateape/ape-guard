@@ -11,6 +11,7 @@ mod find;
 mod normalize;
 mod dedup;
 mod cache;
+mod chain;
 mod report;
 
 use std::path::PathBuf;
@@ -132,6 +133,9 @@ async fn run_scan(
     dedup::cross_reference(&mut all_findings);
     let final_findings = dedup::deduplicate(all_findings);
 
+    // Build attack chains
+    let attack_chains = chain::build_attack_chains(&final_findings);
+
     // Compute Zero Trust scorecard
     let zt_scorecard = normalize::compute_zt_scorecard(&final_findings);
 
@@ -155,6 +159,9 @@ async fn run_scan(
         by_sev.critical, by_sev.high, by_sev.medium, by_sev.low, by_sev.info,
     );
 
+    // Show chain count separately (before move)
+    let chain_count = attack_chains.len();
+
     let summary = find::ScanSummary {
         scan_id: scan_id.clone(),
         timestamp: chrono::Utc::now().to_rfc3339(),
@@ -165,7 +172,7 @@ async fn run_scan(
         findings_by_severity: by_sev,
         scanners_used: scanners_used.clone(),
         zt_scorecard: Some(zt_scorecard.clone()),
-        attack_chains: vec![],
+        attack_chains,
     };
 
     // Record scan in cache
@@ -186,6 +193,7 @@ async fn run_scan(
     println!("  Duration: {:.1}s", duration);
     println!("  Findings: {} (C:{}, H:{}, M:{}, L:{}, I:{})",
         total, c_sev, h_sev, m_sev, l_sev, i_sev);
+    println!("  Attack Chains: {}", chain_count);
     println!("  Reports:");
     for p in &report_paths {
         println!("    📋 {}", p.display());
