@@ -12,6 +12,7 @@ mod normalize;
 mod dedup;
 mod cache;
 mod chain;
+mod arch;
 mod report;
 
 use std::path::PathBuf;
@@ -59,6 +60,40 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Filter findings by minimum severity threshold
+fn filter_by_severity(
+    findings: Vec<find::CanonicalFinding>,
+    filter: &cli::SeverityFilter,
+) -> Vec<find::CanonicalFinding> {
+    use find::Severity;
+
+    let min_severity = match filter {
+        cli::SeverityFilter::All => return findings, // No filtering
+        cli::SeverityFilter::Info => Severity::Info,
+        cli::SeverityFilter::Low => Severity::Low,
+        cli::SeverityFilter::Medium => Severity::Medium,
+        cli::SeverityFilter::High => Severity::High,
+        cli::SeverityFilter::Critical => Severity::Critical,
+    };
+
+    let before = findings.len();
+    let filtered: Vec<_> = findings
+        .into_iter()
+        .filter(|f| f.severity >= min_severity)
+        .collect();
+    let after = filtered.len();
+    let removed = before - after;
+
+    if removed > 0 {
+        tracing::info!(
+            "Severity filter ({:?}): removed {} findings below threshold (kept {})",
+            filter, removed, after
+        );
+    }
+
+    filtered
 }
 
 /// Run a full security scan pipeline
@@ -132,6 +167,9 @@ async fn run_scan(
     normalize::normalize_findings(&mut all_findings);
     dedup::cross_reference(&mut all_findings);
     let final_findings = dedup::deduplicate(all_findings);
+
+    // Apply severity filter
+    let final_findings = filter_by_severity(final_findings, _severity);
 
     // Build attack chains
     let attack_chains = chain::build_attack_chains(&final_findings);

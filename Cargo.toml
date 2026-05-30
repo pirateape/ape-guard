@@ -23,6 +23,7 @@ async-trait = "0.1"
 
 # Utilities
 which = "6.0"
+regex = "1"
 
 # Cache
 rusqlite = { version = "0.31", features = ["bundled"] }
