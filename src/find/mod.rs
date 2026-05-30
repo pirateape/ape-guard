@@ -124,3 +124,106 @@ pub struct FindingsBySeverity {
     pub low: u32,
     pub info: u32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_severity_ordering() {
+        assert!(Severity::Critical > Severity::High);
+        assert!(Severity::High > Severity::Medium);
+        assert!(Severity::Medium > Severity::Low);
+        assert!(Severity::Low > Severity::Info);
+    }
+
+    #[test]
+    fn test_canonical_finding_defaults() {
+        let f = CanonicalFinding {
+            id: "test-1".into(),
+            scanner: ScannerType::Gitleaks,
+            scanner_version: None,
+            rule_id: "test-rule".into(),
+            severity: Severity::High,
+            confidence: Confidence::Firm,
+            title: "Test".into(),
+            description: "Desc".into(),
+            location: FindingLocation {
+                file: PathBuf::from("test.py"),
+                line: Some(42),
+                column: None,
+                commit: None,
+                author: None,
+                snippet: None,
+            },
+            cwe: None,
+            cvss: None,
+            remediation: None,
+            fix_effort: None,
+            evidence: None,
+            tags: vec![],
+            zt_pillars: vec![],
+            cross_refs: vec![],
+        };
+        assert_eq!(f.id, "test-1");
+        assert!(f.location.file.ends_with("test.py"));
+    }
+
+    #[test]
+    fn test_attack_chain_creation() {
+        let chain = AttackChain {
+            id: "AC-001".into(),
+            risk_score: 8.5,
+            description: "Chain from secret to RCE".into(),
+            steps: vec!["Find API key".into(), "Access internal endpoint".into()],
+            finding_ids: vec!["F-001".into(), "F-002".into()],
+            recommendation: "Rotate keys and add WAF".into(),
+        };
+        assert_eq!(chain.risk_score, 8.5);
+        assert_eq!(chain.steps.len(), 2);
+    }
+
+    #[test]
+    fn test_zt_scorecard_defaults() {
+        let sc = ZeroTrustScorecard {
+            overall_score: 75,
+            max_score: 800,
+            pillars: vec![],
+            pillars_at_advanced_or_higher: 0,
+            target_maturity: MaturityTier::Advanced,
+        };
+        assert_eq!(sc.overall_score, 75);
+    }
+
+    #[test]
+    fn test_findings_by_severity() {
+        let fbs = FindingsBySeverity {
+            critical: 3,
+            high: 7,
+            medium: 12,
+            low: 25,
+            info: 50,
+        };
+        assert_eq!(fbs.critical + fbs.high + fbs.medium + fbs.low + fbs.info, 97);
+    }
+
+    #[test]
+    fn test_maturity_tier_debug() {
+        let baseline = MaturityTier::Baseline;
+        let advanced = MaturityTier::Advanced;
+        let adaptive = MaturityTier::Adaptive;
+
+        // Just verify they exist and can be compared
+        assert_ne!(baseline, advanced);
+        assert_ne!(advanced, adaptive);
+    }
+
+    #[test]
+    fn test_cross_reference_default() {
+        let cr = CrossReference {
+            scanner: ScannerType::Semgrep,
+            rule_id: "rule-1".into(),
+        };
+        assert_eq!(cr.scanner, ScannerType::Semgrep);
+    }
+}

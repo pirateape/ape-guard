@@ -159,6 +159,7 @@ impl ScanCache {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ScanRecord {
     pub scan_id: String,
     pub target: String,

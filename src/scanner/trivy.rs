@@ -18,6 +18,7 @@ pub enum TrivyMode {
 }
 
 impl Trivy {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Trivy {
             binary: "trivy".to_string(),

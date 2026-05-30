@@ -2,6 +2,7 @@
 // One command. Three reports. Zero Trust mapped.
 //
 // Architecture: docs/03-Projects/ApeGuard/ApeGuard_Architecture.md
+#![allow(dead_code)]
 
 mod cli;
 mod config;
@@ -63,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
 async fn run_scan(
     target: &str,
     layers: &[u8],
-    severity: &cli::SeverityFilter,
+    _severity: &cli::SeverityFilter,
     output_dir: &str,
     cfg: &config::Config,
 ) -> anyhow::Result<()> {

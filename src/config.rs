@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Config {
     /// Scanner layers enabled (1=secrets, 2=SAST, 3=SCA, 4=container, 5=DAST)
     pub layers: Vec<u8>,
@@ -13,6 +14,7 @@ pub struct Config {
     pub severity: String,
 
     /// Scanner binary paths (auto-detected if not set)
+    #[serde(default)]
     pub binaries: ScannerBinaries,
 
     /// Cache settings
@@ -25,7 +27,7 @@ pub struct Config {
     pub output_dir: PathBuf,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScannerBinaries {
     pub gitleaks: Option<String>,
     pub semgrep: Option<String>,
@@ -155,8 +157,10 @@ fn merge(base: &mut Config, overlay: Config) {
 /// Generate a default .apeguard.yaml config file
 pub fn generate_init(path: Option<String>, _template: cli::InitTemplate) -> anyhow::Result<()> {
     let target = path.map(PathBuf::from).unwrap_or_default();
-    let config_path = if target.is_dir() || target.as_os_str().is_empty() {
+    let config_path = if target.as_os_str().is_empty() {
         PathBuf::from(".apeguard.yaml")
+    } else if target.is_dir() {
+        target.join(".apeguard.yaml")
     } else {
         target.join(".apeguard.yaml")
     };
@@ -186,4 +190,121 @@ pub fn generate_init(path: Option<String>, _template: cli::InitTemplate) -> anyh
     std::fs::write(&config_path, commented)?;
     tracing::info!("Created config: {}", config_path.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_defaults() {
+        let cfg = Config::default();
+        assert_eq!(cfg.layers, vec![1, 2, 3]);
+        assert_eq!(cfg.severity, "all");
+        assert!(cfg.cache.enabled);
+        assert_eq!(cfg.report.formats, vec!["md"]);
+        assert_eq!(cfg.report.types.len(), 3);
+    }
+
+    #[test]
+    fn test_merge_overlay() {
+        let mut base = Config::default();
+        let overlay = Config {
+            layers: vec![1],
+            severity: "high".into(),
+            binaries: ScannerBinaries {
+                gitleaks: Some("/usr/local/bin/gitleaks".into()),
+                semgrep: None,
+                trivy: None,
+            },
+            ..Config::default()
+        };
+        merge(&mut base, overlay);
+        assert_eq!(base.layers, vec![1]);
+        assert_eq!(base.severity, "high");
+        assert_eq!(base.binaries.gitleaks, Some("/usr/local/bin/gitleaks".into()));
+        assert!(base.binaries.semgrep.is_none());
+    }
+
+    #[test]
+    fn test_merge_empty_layers_does_not_override() {
+        let mut base = Config::default();
+        assert_eq!(base.layers, vec![1, 2, 3]);
+        let overlay = Config {
+            layers: vec![],
+            ..Config::default()
+        };
+        merge(&mut base, overlay);
+        // Should keep original layers when overlay layers are empty
+        assert_eq!(base.layers, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_merge_report_formats() {
+        let mut base = Config::default();
+        let overlay = Config {
+            report: ReportConfig {
+                formats: vec!["html".into()],
+                types: vec!["tech".into()],
+            },
+            ..Config::default()
+        };
+        merge(&mut base, overlay);
+        assert_eq!(base.report.formats, vec!["html"]);
+    }
+
+    #[test]
+    fn test_config_yaml_roundtrip() {
+        let cfg = Config::default();
+        let yaml = serde_yaml::to_string(&cfg).unwrap();
+        let parsed: Config = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(cfg.layers, parsed.layers);
+        assert_eq!(cfg.severity, parsed.severity);
+        assert_eq!(cfg.cache.enabled, parsed.cache.enabled);
+    }
+
+    #[test]
+    fn test_config_yaml_custom_values() {
+        let yaml = r#"
+layers:
+  - 1
+  - 5
+severity: "critical"
+cache:
+  enabled: false
+  path: "/tmp/cache"
+  ttl_hours: 48
+"#;
+        let cfg: Config = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.layers, vec![1, 5]);
+        assert_eq!(cfg.severity, "critical");
+        assert!(!cfg.cache.enabled);
+        assert_eq!(cfg.cache.ttl_hours, 48);
+    }
+
+    #[test]
+    fn test_generate_init_fails_if_exists() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let config_path = tmpdir.path().join(".apeguard.yaml");
+        std::fs::write(&config_path, "existing: true").unwrap();
+
+        let result = generate_init(
+            Some(tmpdir.path().to_str().unwrap().to_string()),
+            crate::cli::InitTemplate::Default,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("already exists"));
+    }
+
+    #[test]
+    fn test_scanner_binaries_defaults() {
+        let bins = ScannerBinaries {
+            gitleaks: None,
+            semgrep: None,
+            trivy: None,
+        };
+        assert!(bins.gitleaks.is_none());
+        assert!(bins.semgrep.is_none());
+        assert!(bins.trivy.is_none());
+    }
 }

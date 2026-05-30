@@ -21,7 +21,7 @@ const ZT_MAPPINGS: &[(&str, &str, MaturityTier)] = &[
     // Dependency vulns → Applications pillar
     ("dependency", "applications", MaturityTier::Baseline),
     ("vulnerability", "applications", MaturityTier::Baseline),
-    ("CVE", "applications", MaturityTier::Baseline),
+    ("cve", "applications", MaturityTier::Baseline),
     // Misconfig → Networks pillar
     ("misconfig", "networks", MaturityTier::Baseline),
     ("iac", "networks", MaturityTier::Advanced),
@@ -151,4 +151,172 @@ pub fn mitre_mapping(finding: &CanonicalFinding) -> Vec<String> {
     }
 
     tactics
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::find::*;
+    use std::path::PathBuf;
+
+    fn make_finding(id: &str, rule_id: &str, title: &str) -> CanonicalFinding {
+        CanonicalFinding {
+            id: id.into(),
+            scanner: ScannerType::Gitleaks,
+            scanner_version: None,
+            rule_id: rule_id.into(),
+            severity: Severity::High,
+            confidence: Confidence::Firm,
+            title: title.into(),
+            description: "desc".into(),
+            location: FindingLocation {
+                file: PathBuf::from("test.py"),
+                line: Some(1),
+                column: None,
+                commit: None,
+                author: None,
+                snippet: None,
+            },
+            cwe: None,
+            cvss: None,
+            remediation: None,
+            fix_effort: None,
+            evidence: None,
+            tags: vec![],
+            zt_pillars: vec![],
+            cross_refs: vec![],
+        }
+    }
+
+    #[test]
+    fn test_zt_mapping_secret() {
+        let mut findings = vec![make_finding("1", "gitleaks-aws-key", "AWS Secret Key Found")];
+        normalize_findings(&mut findings);
+        assert!(findings[0].zt_pillars.contains(&"identity".to_string()));
+    }
+
+    #[test]
+    fn test_zt_mapping_injection() {
+        let mut findings = vec![make_finding("1", "semgrep-sqli", "SQL Injection detected")];
+        normalize_findings(&mut findings);
+        assert!(findings[0].zt_pillars.contains(&"devices".to_string()));
+    }
+
+    #[test]
+    fn test_zt_mapping_xss() {
+        let mut findings = vec![make_finding("1", "semgrep-xss", "XSS vulnerability")];
+        normalize_findings(&mut findings);
+        assert!(findings[0].zt_pillars.contains(&"devices".to_string()));
+    }
+
+    #[test]
+    fn test_zt_mapping_dependency() {
+        let mut findings = vec![make_finding("1", "CVE-2024-1234", "Critical vulnerability in dep")];
+        normalize_findings(&mut findings);
+        assert!(findings[0].zt_pillars.contains(&"applications".to_string()));
+    }
+
+    #[test]
+    fn test_zt_mapping_misconfig() {
+        let mut findings = vec![make_finding("1", "trivy-misconfig-001", "Misconfigured S3 bucket")];
+        normalize_findings(&mut findings);
+        assert!(findings[0].zt_pillars.contains(&"networks".to_string()));
+    }
+
+    #[test]
+    fn test_zt_default_pillar() {
+        let mut findings = vec![make_finding("1", "custom-rule", "Generic security issue")];
+        normalize_findings(&mut findings);
+        // Falls back to "applications" when nothing matches
+        assert!(findings[0].zt_pillars.contains(&"applications".to_string()));
+    }
+
+    #[test]
+    fn test_zt_mapping_no_duplicates() {
+        let mut findings = vec![make_finding("1", "secret", "Credential password found")];
+        normalize_findings(&mut findings);
+        // "secret" and "credential" and "password" all map to "identity"
+        // but it should only appear once
+        let identity_count = findings[0].zt_pillars.iter().filter(|p| *p == "identity").count();
+        assert_eq!(identity_count, 1);
+    }
+
+    #[test]
+    fn test_scorecard_no_findings() {
+        let findings = vec![];
+        let sc = compute_zt_scorecard(&findings);
+        assert_eq!(sc.overall_score, 800); // 8 pillars × 100
+        assert_eq!(sc.pillars.len(), 8);
+        for pillar in &sc.pillars {
+            assert_eq!(pillar.score, 100);
+            assert_eq!(pillar.maturity, MaturityTier::Adaptive);
+        }
+    }
+
+    #[test]
+    fn test_scorecard_single_finding() {
+        // Findings need zt_pillars populated for scorecard to see them
+        let mut findings = vec![make_finding("1", "secret", "Secret")];
+        normalize_findings(&mut findings); // Sets zt_pillars to ["identity"]
+        let sc = compute_zt_scorecard(&findings);
+        let identity = sc.pillars.iter().find(|p| p.name == "identity").unwrap();
+        assert!(identity.score < 100); // Should lose points
+        assert_eq!(identity.gap_count, 1);
+    }
+
+    #[test]
+    fn test_scorecard_multiple_findings_capped() {
+        let mut findings = vec![
+            make_finding("1", "secret", "Secret 1"),
+            make_finding("2", "secret", "Secret 2"),
+            make_finding("3", "secret", "Secret 3"),
+            make_finding("4", "secret", "Secret 4"),
+            make_finding("5", "secret", "Secret 5"),
+            make_finding("6", "secret", "Secret 6"), // 6th capped
+        ];
+        normalize_findings(&mut findings); // Sets zt_pillars for all
+        let sc = compute_zt_scorecard(&findings);
+        let identity = sc.pillars.iter().find(|p| p.name == "identity").unwrap();
+        assert_eq!(identity.gap_count, 5); // Capped at 5
+        assert_eq!(identity.score, 0); // 5 gaps = 0 score
+    }
+
+    #[test]
+    fn test_scorecard_maturity_levels() {
+        // 1 low-severity finding → Advanced
+        let mut findings = vec![make_finding("1", "info-rule", "Info level")];
+        findings[0].severity = Severity::Low;
+        normalize_findings(&mut findings);
+        let sc = compute_zt_scorecard(&findings);
+        let app = sc.pillars.iter().find(|p| p.name == "applications").unwrap();
+        assert_eq!(app.maturity, MaturityTier::Advanced);
+
+        // Multiple high severity → Baseline
+        let mut findings = vec![
+            make_finding("1", "secret", "Critical 1"),
+            make_finding("2", "secret", "Critical 2"),
+            make_finding("3", "secret", "Critical 3"),
+        ];
+        normalize_findings(&mut findings);
+        let sc = compute_zt_scorecard(&findings);
+        let identity = sc.pillars.iter().find(|p| p.name == "identity").unwrap();
+        assert_eq!(identity.maturity, MaturityTier::Baseline);
+    }
+
+    #[test]
+    fn test_mitre_mapping_secret() {
+        let finding = make_finding("1", "gitleaks-aws-key", "AWS Secret Key Found");
+        let tactics = mitre_mapping(&finding);
+        assert!(tactics.contains(&"TA0006".to_string())); // Credential Access
+    }
+
+    #[test]
+    fn test_multiple_zt_pillars() {
+        let mut findings = vec![make_finding("1", "CVE-2024-secret", "CVE with credential leak")];
+        normalize_findings(&mut findings);
+        // Should map to both "applications" (lowercase cve) and "identity" (secret/credential)
+        assert!(findings[0].zt_pillars.contains(&"applications".to_string()));
+        assert!(findings[0].zt_pillars.contains(&"identity".to_string()));
+    }
+
 }

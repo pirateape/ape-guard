@@ -51,6 +51,7 @@ pub trait Scanner: Send + Sync {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum ScannerResult {
     Complete {
         name: String,
@@ -69,6 +70,7 @@ pub enum ScannerResult {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum ScannerError {
     #[error("Scanner not found: {0}")]
     NotFound(String),
