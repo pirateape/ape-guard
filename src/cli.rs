@@ -24,7 +24,7 @@ pub struct Args {
     pub quiet: bool,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone)]
 pub enum Command {
     /// Run a full security assessment
     Scan {
@@ -125,7 +125,13 @@ pub enum Command {
     },
 }
 
-#[derive(Clone, ValueEnum)]
+impl Command {
+    pub fn is_scan(&self) -> bool {
+        matches!(self, Command::Scan { .. })
+    }
+}
+
+#[derive(Debug, Clone, ValueEnum)]
 pub enum SeverityFilter {
     All,
     Info,
@@ -172,7 +178,7 @@ pub enum InitTemplate {
     Minimal,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Clone, Subcommand)]
 pub enum ConfigSubcommand {
     /// Validate configuration
     Validate,
