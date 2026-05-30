@@ -58,6 +58,10 @@ impl Scanner for Semgrep {
             .arg("--quiet")
             .arg("--metrics")
             .arg("off")
+            .arg("--config")
+            .arg("p/security-audit")
+            .arg("--config")
+            .arg("p/owasp-top-ten")
             .arg("--use-git-ignore")
             .arg(path)
             .output()
@@ -75,8 +79,10 @@ impl Scanner for Semgrep {
 
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         #[derive(Deserialize)]
+        #[allow(dead_code)]
         struct SemgrepResults {
             results: Vec<SemgrepFinding>,
+            #[serde(default)]
             errors: Vec<SemgrepError>,
         }
 
@@ -104,9 +110,10 @@ impl Scanner for Semgrep {
             lines: Option<String>,
         }
 
-        #[derive(Deserialize)]
+        #[derive(Deserialize, Default)]
+        #[serde(default)]
         struct SemgrepError {
-            _message: String,
+            message: Option<String>,
         }
 
         let results: SemgrepResults =

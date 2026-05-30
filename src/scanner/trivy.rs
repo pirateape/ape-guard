@@ -128,17 +128,29 @@ impl Scanner for Trivy {
 impl Trivy {
     fn parse_vuln(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
         struct TrivyReport {
             results: Vec<TrivyResult>,
         }
 
         #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
         struct TrivyResult {
             target: String,
+            #[serde(rename = "Packages")]
+            packages: Option<Vec<TrivyPackage>>,
+        }
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct TrivyPackage {
+            name: String,
+            #[serde(rename = "Vulnerabilities")]
             vulnerabilities: Option<Vec<TrivyVuln>>,
         }
 
         #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
         struct TrivyVuln {
             vulnerability_id: String,
             pkg_name: String,
@@ -156,46 +168,52 @@ impl Trivy {
 
         let now = chrono::Utc::now().format("%Y%m%d").to_string();
         let mut findings = Vec::new();
+        let mut idx = 0u32;
 
         for result in &report.results {
-            if let Some(ref vulns) = result.vulnerabilities {
-                for (i, v) in vulns.iter().enumerate() {
-                    let sev = match v.severity.to_lowercase().as_str() {
-                        "critical" => Severity::Critical,
-                        "high" => Severity::High,
-                        "medium" => Severity::Medium,
-                        "low" => Severity::Low,
-                        _ => Severity::Info,
-                    };
+            if let Some(ref packages) = result.packages {
+                for pkg in packages {
+                    if let Some(ref vulns) = pkg.vulnerabilities {
+                        for v in vulns {
+                            idx += 1;
+                            let sev = match v.severity.to_lowercase().as_str() {
+                                "critical" => Severity::Critical,
+                                "high" => Severity::High,
+                                "medium" => Severity::Medium,
+                                "low" => Severity::Low,
+                                _ => Severity::Info,
+                            };
 
-                    findings.push(CanonicalFinding {
-                        id: format!("AG-TV-{}-{:04}", now, i + 1),
-                        scanner: ScannerType::TrivyVuln,
-                        scanner_version: None,
-                        rule_id: v.vulnerability_id.clone(),
-                        severity: sev,
-                        confidence: Confidence::Certain,
-                        title: v.title.clone().unwrap_or_else(|| v.vulnerability_id.clone()),
-                        description: v.description.clone().unwrap_or_default(),
-                        location: FindingLocation {
-                            file: std::path::PathBuf::from(&result.target),
-                            line: None,
-                            column: None,
-                            commit: None,
-                            author: None,
-                            snippet: Some(format!("{} {} → {}",
-                                v.pkg_name, v.installed_version, v.fixed_version)),
-                        },
-                        cwe: v.cwe_ids.as_ref().and_then(|ids| ids.first().cloned()),
-                        cvss: v.cvss_score.map(|s| s as f32),
-                        remediation: Some(format!("Update {} from {} to {}",
-                            v.pkg_name, v.installed_version, v.fixed_version)),
-                        fix_effort: None,
-                        evidence: None,
-                        tags: vec!["dependency".to_string(), v.pkg_name.clone()],
-                        zt_pillars: vec![],
-                        cross_refs: vec![],
-                    });
+                            findings.push(CanonicalFinding {
+                                id: format!("AG-TV-{}-{:04}", now, idx),
+                                scanner: ScannerType::TrivyVuln,
+                                scanner_version: None,
+                                rule_id: v.vulnerability_id.clone(),
+                                severity: sev,
+                                confidence: Confidence::Certain,
+                                title: v.title.clone().unwrap_or_else(|| v.vulnerability_id.clone()),
+                                description: v.description.clone().unwrap_or_default(),
+                                location: FindingLocation {
+                                    file: std::path::PathBuf::from(&result.target),
+                                    line: None,
+                                    column: None,
+                                    commit: None,
+                                    author: None,
+                                    snippet: Some(format!("{} {} → {}",
+                                        v.pkg_name, v.installed_version, v.fixed_version)),
+                                },
+                                cwe: v.cwe_ids.as_ref().and_then(|ids| ids.first().cloned()),
+                                cvss: v.cvss_score.map(|s| s as f32),
+                                remediation: Some(format!("Update {} from {} to {}",
+                                    v.pkg_name, v.installed_version, v.fixed_version)),
+                                fix_effort: None,
+                                evidence: None,
+                                tags: vec!["dependency".to_string(), v.pkg_name.clone()],
+                                zt_pillars: vec![],
+                                cross_refs: vec![],
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -205,17 +223,20 @@ impl Trivy {
 
     fn parse_secret(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
         struct TrivyReport {
             results: Vec<TrivySecretResult>,
         }
 
         #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
         struct TrivySecretResult {
             target: String,
             secrets: Option<Vec<TrivySecret>>,
         }
 
         #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
         struct TrivySecret {
             rule_id: String,
             category: String,
@@ -231,10 +252,12 @@ impl Trivy {
 
         let now = chrono::Utc::now().format("%Y%m%d").to_string();
         let mut findings = Vec::new();
+        let mut idx = 0u32;
 
         for result in &report.results {
             if let Some(ref secrets) = result.secrets {
-                for (i, s) in secrets.iter().enumerate() {
+                for s in secrets {
+                    idx += 1;
                     let sev = match s.severity.to_lowercase().as_str() {
                         "critical" => Severity::Critical,
                         "high" => Severity::High,
@@ -244,7 +267,7 @@ impl Trivy {
                     };
 
                     findings.push(CanonicalFinding {
-                        id: format!("AG-TS-{}-{:04}", now, i + 1),
+                        id: format!("AG-TS-{}-{:04}", now, idx),
                         scanner: ScannerType::TrivySecret,
                         scanner_version: None,
                         rule_id: s.rule_id.clone(),
@@ -278,22 +301,26 @@ impl Trivy {
 
     fn parse_misconfig(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
         struct TrivyReport {
             results: Vec<TrivyMisconfigResult>,
         }
 
         #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
         struct TrivyMisconfigResult {
             target: String,
             misconfigurations: Option<Vec<TrivyMisconfig>>,
         }
 
         #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
         struct TrivyMisconfig {
             rule_id: String,
             severity: String,
             title: String,
             description: String,
+            #[serde(rename = "CauseMetadata")]
             cause_metadata: Option<serde_json::Value>,
             start_line: Option<u32>,
             resolution: Option<String>,
@@ -304,10 +331,12 @@ impl Trivy {
 
         let now = chrono::Utc::now().format("%Y%m%d").to_string();
         let mut findings = Vec::new();
+        let mut idx = 0u32;
 
         for result in &report.results {
             if let Some(ref misconfigs) = result.misconfigurations {
-                for (i, m) in misconfigs.iter().enumerate() {
+                for m in misconfigs {
+                    idx += 1;
                     let sev = match m.severity.to_lowercase().as_str() {
                         "critical" => Severity::Critical,
                         "high" => Severity::High,
@@ -317,7 +346,7 @@ impl Trivy {
                     };
 
                     findings.push(CanonicalFinding {
-                        id: format!("AG-TM-{}-{:04}", now, i + 1),
+                        id: format!("AG-TM-{}-{:04}", now, idx),
                         scanner: ScannerType::TrivyMisconfig,
                         scanner_version: None,
                         rule_id: m.rule_id.clone(),

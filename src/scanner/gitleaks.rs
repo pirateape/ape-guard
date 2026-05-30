@@ -85,6 +85,7 @@ impl Scanner for Gitleaks {
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         // Gitleaks JSON output: array of finding objects
         #[derive(Deserialize)]
+        #[allow(non_snake_case, dead_code)]
         struct GitleaksFinding {
             Description: String,
             StartLine: Option<u32>,
@@ -100,8 +101,21 @@ impl Scanner for Gitleaks {
             Fingerprint: String,
         }
 
-        let findings: Vec<GitleaksFinding> =
-            serde_json::from_slice(raw).map_err(|e| ScannerError::ParseFailed(e.to_string()))?;
+        // Handle empty output (no findings found)
+        if raw.is_empty() || raw.len() < 5 {
+            return Ok(vec![]);
+        }
+
+        // Try to parse as JSON array; if it fails, wrap in brackets for single-object format
+        let findings: Vec<GitleaksFinding> = match serde_json::from_slice(raw) {
+            Ok(f) => f,
+            Err(_) => {
+                // Gitleaks may return a single object without array brackets when using --no-git
+                let wrapped = format!("[{}]", String::from_utf8_lossy(raw));
+                serde_json::from_str(&wrapped)
+                    .map_err(|e| ScannerError::ParseFailed(e.to_string()))?
+            }
+        };
 
         let now = chrono::Utc::now().format("%Y%m%d").to_string();
 
