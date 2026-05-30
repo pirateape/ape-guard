@@ -13,6 +13,7 @@ mod dedup;
 mod cache;
 mod chain;
 mod arch;
+mod mcp;
 mod report;
 
 use std::path::PathBuf;
@@ -56,6 +57,9 @@ async fn main() -> anyhow::Result<()> {
         }
         cli::Command::Completions { shell } => {
             cli::generate_completions(*shell);
+        }
+        cli::Command::Serve => {
+            mcp::serve().await?;
         }
     }
 

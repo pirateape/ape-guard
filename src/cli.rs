@@ -123,6 +123,10 @@ pub enum Command {
         /// Shell type
         shell: clap_complete::Shell,
     },
+
+    /// Start the MCP server (Model Context Protocol) for AI agent integration
+    #[command(name = "serve")]
+    Serve,
 }
 
 impl Command {
