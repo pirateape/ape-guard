@@ -1,0 +1,18 @@
+# Rust
+target/
+Cargo.lock
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+*.swp
+*.swo
+
+# ApeGuard local state
+.apeguard/
+
+# IDE
+.idea/
+*.iml
