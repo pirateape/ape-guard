@@ -27,12 +27,12 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@fcf8fc78eef17e481e78f2ef6024814dfce3f9aa # stable
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.91.1
         with:
           components: clippy
 
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@9d47c60adf7e97df1cb3f9f15d5a2e25d4af6cfb # v2.7.8
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
 
       - name: Build
         run: cargo build --verbose
@@ -50,7 +50,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@fcf8fc78eef17e481e78f2ef6024814dfce3f9aa # stable
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.91.1
         with:
           components: rustfmt
 
