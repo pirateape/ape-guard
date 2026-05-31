@@ -1,6 +1,6 @@
 # ApeGuard
 
-**One-command security posture assessment** — layered scanning, Zero Trust mapping, multi-audience reports.
+**One-command security posture assessment** — layered scanning, [Unified Zero Trust Framework](https://github.com/pirateape/unified-zero-trust-framework) mapping, multi-audience reports.
 
 ```bash
 # Single command — full assessment
@@ -17,7 +17,7 @@ apeguard scan
 ## Features
 
 - **5-layer scanning pipeline** — Secrets → SAST → SCA → Container → DAST in a single command
-- **Zero Trust mapping** — Every finding maps to the 8-pillar Unified Zero Trust Framework with maturity scoring (Baseline → Advanced → Adaptive)
+- **Unified Zero Trust Framework mapping** — Every finding maps to the 8-pillar [UZTF](https://github.com/pirateape/unified-zero-trust-framework) with maturity scoring (Baseline → Advanced → Adaptive). Builds on the CISA Zero Trust Maturity Model as a foundational stepping stone.
 - **Multi-audience reports** — Technical (engineers), Executive (leadership), Roadmap (EMs)
 - **Multi-format output** — Markdown, JSON, SARIF, HTML
 - **Attack chain analysis** — Cross-references findings across scanners to detect multi-stage exploitation paths
@@ -62,11 +62,11 @@ cargo install apeguard
 
 ### From GitHub Releases
 
-Download the pre-built binary for your platform from the [releases page](https://github.com/apeguard/cli/releases).
+Download the pre-built binary for your platform from the [releases page](https://github.com/pirateape/ape-guard/releases).
 
 ```bash
 # Example: Linux x86_64
-curl -LO https://github.com/apeguard/cli/releases/latest/download/apeguard-x86_64-unknown-linux-gnu
+curl -LO https://github.com/pirateape/ape-guard/releases/latest/download/apeguard-x86_64-unknown-linux-gnu
 chmod +x apeguard-x86_64-unknown-linux-gnu
 sudo mv apeguard-x86_64-unknown-linux-gnu /usr/local/bin/apeguard
 ```
@@ -74,8 +74,8 @@ sudo mv apeguard-x86_64-unknown-linux-gnu /usr/local/bin/apeguard
 ### Docker
 
 ```bash
-docker pull ghcr.io/apeguard/cli:latest
-docker run --rm -v "$PWD:/target" ghcr.io/apeguard/cli scan /target
+docker pull ghcr.io/pirateape/ape-guard:latest
+docker run --rm -v "$PWD:/target" ghcr.io/pirateape/ape-guard scan /target
 ```
 
 ---
@@ -188,26 +188,30 @@ Example: `AG-GL-20260531-a1b2c3d4-001`
 
 ## Zero Trust Framework Mapping
 
-Each finding is mapped to one or more Zero Trust pillars:
+ApeGuard implements the [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — an 8-pillar maturity model that builds on the [CISA Zero Trust Maturity Model](https://www.cisa.gov/zero-trust-maturity-model) as its foundational stepping stone.
 
-| Pillar | Description | Example Finding |
-|--------|-------------|-----------------|
-| **Identity** | Authentication & authorization | Hardcoded API keys |
-| **Device** | Endpoint health & compliance | Outdated dependency |
-| **Network** | Segmentation & traffic security | Open port / SSRF |
-| **Application** | App security & input validation | SQL injection / XSS |
-| **Data** | Encryption & classification | Secrets in source |
-| **Visibility** | Monitoring & analytics | Missing audit log |
-| **Automation** | Automated response & orchestration | CI/CD misconfig |
-| **Infrastructure** | Cloud/host configuration | IAM misconfig |
+> **UZTF** adds quantitative scoring and automated gap analysis on top of CISA's strategic maturity tiers. CISA defines *what* Zero Trust looks like; UZTF defines *how to measure and achieve it*.
 
-### Maturity Scoring
+Each finding is mapped to one or more UZTF pillars:
+
+| Pillar | Description | Example Finding | CISA Origin |
+|--------|-------------|-----------------|-------------|
+| **Identity** | Authentication & authorization | Hardcoded API keys | Direct: CISA Identity |
+| **Device** | Endpoint health & compliance | Outdated dependency | Direct: CISA Devices |
+| **Network** | Segmentation & traffic security | Open port / SSRF | Direct: CISA Networks |
+| **Application** | App security & input validation | SQL injection / XSS | Direct: CISA Applications |
+| **Data** | Encryption & classification | Secrets in source | Direct: CISA Data |
+| **Visibility** | Monitoring & analytics | Missing audit log | Extension of CISA cross-cutting |
+| **Automation** | Automated response & orchestration | CI/CD misconfig | Extension of CISA cross-cutting |
+| **Infrastructure** | Cloud/host configuration | IAM misconfig | Extension of CISA cross-cutting |
+
+### Maturity Scoring (UZTF)
 
 - **Baseline** (0–50): Foundational controls present, significant gaps
 - **Advanced** (51–80): Proactive security measures implemented
 - **Adaptive** (81–100): Real-time, automated, self-healing posture
 
-The scorecard shows pillar-by-pillar maturity with actionable gap analysis.
+The scorecard shows pillar-by-pillar maturity with actionable gap analysis. For the full framework specification, see the [UZTF repository](https://github.com/pirateape/unified-zero-trust-framework).
 
 ---
 
@@ -387,6 +391,7 @@ You may use, copy, modify, and redistribute this software in any project — inc
 
 ## Related
 
-- [Unified Zero Trust Framework](https://www.cisa.gov/zero-trust-maturity-model) — CISA Zero Trust Maturity Model
+- [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — 8-pillar maturity model with quantitative scoring (what this tool implements)
+- [CISA Zero Trust Maturity Model](https://www.cisa.gov/zero-trust-maturity-model) — Foundational ZT framework from the US Federal government (UZTF builds on this)
 - [MITRE ATT&CK](https://attack.mitre.org/) — Adversarial tactics & techniques
 - [Model Context Protocol](https://modelcontextprotocol.io/) — AI agent integration standard

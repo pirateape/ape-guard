@@ -2,9 +2,16 @@
 // Post-processes raw findings from all scanners into a unified, enriched format.
 // Responsibilities:
 //   1. Cross-reference findings across scanners
-//   2. Enrich with Zero Trust pillar mappings
+//   2. Enrich with Unified Zero Trust Framework (UZTF) pillar mappings
 //   3. Compute confidence scores
 //   4. Tag findings with additional context
+//
+// The UZTF is an 8-pillar maturity model that builds on the CISA Zero Trust
+// Maturity Model as its foundational stepping stone. This implementation maps
+// security findings to UZTF pillars (Identity, Devices, Networks, Applications,
+// Data, Visibility, Automation, Infrastructure) and computes quantitative
+// pillar scores (0-100) and overall scorecard (0-800).
+// See: https://github.com/pirateape/unified-zero-trust-framework
 use crate::find::{
     CanonicalFinding, GapAnalysis, GapLevel, MaturityTier, PillarScore, ScannerType, Severity,
     ZeroTrustScorecard,

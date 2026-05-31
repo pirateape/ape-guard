@@ -1,5 +1,10 @@
 // Canonical Finding Schema
 // All scanner output is normalized into this structure for analysis.
+//
+// Zero Trust types in this module (ZeroTrustScorecard, PillarScore, MaturityTier,
+// GapAnalysis) implement the Unified Zero Trust Framework (UZTF) — an 8-pillar
+// maturity model that builds on the CISA Zero Trust Maturity Model.
+// See: https://github.com/pirateape/unified-zero-trust-framework
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
