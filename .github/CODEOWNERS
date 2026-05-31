@@ -1,0 +1,12 @@
+# Code owners for ApeGuard
+# Each line is a file pattern followed by one or more owners.
+# See: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything
+* @pirateape
+
+# CI/CD workflows — owned by repo maintainer
+.github/workflows/* @pirateape
+
+# Security-related files
+SECURITY.md @pirateape
