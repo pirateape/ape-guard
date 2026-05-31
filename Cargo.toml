@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "One-command security posture assessment — layered scans, zero trust mapping, 3-audience reports"
 authors = ["APE-Brain"]
-license = "EL-2.0"
+license = "Elastic-2.0"
 repository = "https://github.com/apeguard/cli"
 
 [dependencies]

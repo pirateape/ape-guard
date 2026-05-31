@@ -2,19 +2,17 @@
 # frozen_string_literal: true
 
 # ApeGuard — One-command security posture assessment
-# Homebrew formula: install with:
-#   brew install --formula path/to/apeguard.rb
-# Or add to a custom tap:
-#   brew tap apeguard/homebrew-tap
+# Homebrew formula. Install with:
+#   brew tap pirateape/tap
 #   brew install apeguard
 
 class Apeguard < Formula
   desc "One-command security posture assessment — layered scans, Zero Trust mapping, multi-audience reports"
-  homepage "https://github.com/apeguard/cli"
-  url "https://github.com/apeguard/cli/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "REPLACE_ME_WITH_ACTUAL_SHA256"
-  license "EL-2.0"
-  head "https://github.com/apeguard/cli.git", branch: "main"
+  homepage "https://github.com/pirateape/ape-guard"
+  url "https://github.com/pirateape/ape-guard/archive/refs/tags/v0.1.0.tar.gz"
+  sha256 "7a8fa6e4a9e14caf04e9f7cf2477547cc95eda76d66dff5d84f9a9d1bf564fe4"
+  license "Elastic-2.0"
+  head "https://github.com/pirateape/ape-guard.git", branch: "main"
 
   depends_on "rust" => :build
   depends_on "gitleaks" => :recommended
@@ -24,14 +22,11 @@ class Apeguard < Formula
 
   def install
     system "cargo", "install", *std_cargo_args
-    bash_completion.install "completions/apeguard.bash" if Dir.exist?("completions")
-    fish_completion.install "completions/apeguard.fish" if Dir.exist?("completions")
-    zsh_completion.install "completions/_apeguard" if Dir.exist?("completions")
   end
 
   test do
     output = shell_output("#{bin}/apeguard version 2>&1")
     assert_match "ApeGuard v", output
-    assert_match "License: EL-2.0", output
+    assert_match "License: Elastic-2.0", output
   end
 end

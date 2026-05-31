@@ -11,7 +11,7 @@ fn test_version() {
         .assert()
         .success()
         .stdout(predicate::str::contains("ApeGuard v0.1.0"))
-        .stdout(predicate::str::contains("EL-2.0"));
+        .stdout(predicate::str::contains("Elastic-2.0"));
 }
 
 #[test]
