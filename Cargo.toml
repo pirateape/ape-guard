@@ -1,6 +1,6 @@
 [package]
 name = "apeguard"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "One-command security posture assessment — layered scans, zero trust mapping, 3-audience reports"
 authors = ["APE-Brain"]
@@ -19,6 +19,7 @@ serde_json = "1"
 
 # Async / Concurrency
 tokio = { version = "1", features = ["full"] }
+futures = "0.3"
 async-trait = "0.1"
 reqwest = { version = "0.12", features = ["json"] }
 

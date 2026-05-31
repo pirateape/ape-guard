@@ -15,6 +15,7 @@ fn load_effective_config() -> crate::config::Config {
         log_level: "info".to_string(),
         no_color: false,
         quiet: false,
+        ci: false,
     };
 
     crate::config::load(&args).unwrap_or_else(|_| crate::config::Config::default())

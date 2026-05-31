@@ -72,6 +72,7 @@ ApeGuard follows [Semantic Versioning](https://semver.org/):
 
 | Version | Date       | Highlights                              |
 |---------|------------|-----------------------------------------|
+| 0.2.0   | 2026-05-31 | Parallel scanning, HTML charts, severity-weighted ZT scorecard, --ci flag, multi-arch Docker |
 | 0.1.0   | 2026-05-31 | Initial release: 5-layer scanning, MCP, ZT scorecard, HTML reports |
 
 ## Branch Protection
