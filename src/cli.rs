@@ -26,6 +26,11 @@ pub struct Args {
     /// Suppress all output except results
     #[arg(short, long, global = true)]
     pub quiet: bool,
+
+    /// CI mode: exit code reflects scan results. Equivalent to --fail-on high.
+    /// Overrides --fail-on if not explicitly set.
+    #[arg(long, global = true)]
+    pub ci: bool,
 }
 
 #[derive(Subcommand, Clone)]

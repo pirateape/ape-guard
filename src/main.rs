@@ -52,14 +52,21 @@ async fn main() -> anyhow::Result<()> {
             ..
         } => {
             let target = path.clone().unwrap_or_else(|| ".".to_string());
+            // CI mode: auto-upgrade fail_on to high (unless explicitly set)
+            let effective_fail_on = if args.ci && matches!(fail_on, cli::FailOnThreshold::Never) {
+                &cli::FailOnThreshold::High
+            } else {
+                fail_on
+            };
             let scan_args = ScanArgs {
                 target: &target,
                 layers,
                 severity,
-                fail_on,
+                fail_on: effective_fail_on,
                 output_dir,
                 no_cache: *no_cache,
                 quiet: args.quiet,
+                ci: args.ci,
                 formats: format.clone(),
                 web_target: web.clone(),
                 containers: container.clone(),
@@ -148,6 +155,7 @@ struct ScanArgs<'a> {
     output_dir: &'a str,
     no_cache: bool,
     quiet: bool,
+    ci: bool,
     formats: Vec<cli::OutputFormat>,
     web_target: Option<String>,
     containers: Vec<String>,
@@ -172,6 +180,7 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
     let output_dir = args.output_dir;
     let no_cache = args.no_cache;
     let quiet = args.quiet;
+    let ci = args.ci;
     let formats = args.formats;
     let web_target = args.web_target;
     let containers = args.containers;
@@ -252,16 +261,24 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
         }
     }
 
-    // Run each scanner
+    // Run each scanner in parallel
     let mut all_findings: Vec<find::CanonicalFinding> = Vec::new();
     let mut scanners_used: Vec<String> = Vec::new();
 
-    for s in &scanners {
+    use futures::future::join_all;
+    let scan_results = join_all(scanners.iter().map(|s| {
         let name = s.name();
         tracing::info!("Running scanner: {}", name);
-        scanners_used.push(name.to_string());
+        async {
+            let result = s.scan(&target_path).await;
+            (name.to_string(), result)
+        }
+    }))
+    .await;
 
-        match s.scan(&target_path).await {
+    for (name, result) in scan_results {
+        scanners_used.push(name.clone());
+        match result {
             Ok(ScannerResult::Complete { findings, .. }) => {
                 tracing::info!("  {}: {} findings", name, findings.len());
                 all_findings.extend(findings);
@@ -461,14 +478,29 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
 
     // Enforce --fail-on threshold for CI exit codes
     if fail_threshold_reached {
-        anyhow::bail!(
-            "❌ Fail-on threshold '{}' reached — found findings at or above this severity",
-            match fail_on {
-                cli::FailOnThreshold::Critical => "critical",
-                cli::FailOnThreshold::High => "high",
-                cli::FailOnThreshold::Never => unreachable!(),
+        if ci {
+            // CI mode: clean exit code without error message
+            if !quiet {
+                eprintln!(
+                    "FAILED: findings at or above '{}' threshold",
+                    match fail_on {
+                        cli::FailOnThreshold::Critical => "critical",
+                        cli::FailOnThreshold::High => "high",
+                        cli::FailOnThreshold::Never => unreachable!(),
+                    }
+                );
             }
-        );
+            std::process::exit(1);
+        } else {
+            anyhow::bail!(
+                "❌ Fail-on threshold '{}' reached — found findings at or above this severity",
+                match fail_on {
+                    cli::FailOnThreshold::Critical => "critical",
+                    cli::FailOnThreshold::High => "high",
+                    cli::FailOnThreshold::Never => unreachable!(),
+                }
+            );
+        }
     }
 
     Ok(())
