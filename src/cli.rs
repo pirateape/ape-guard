@@ -27,8 +27,9 @@ pub struct Args {
     #[arg(short, long, global = true)]
     pub quiet: bool,
 
-    /// CI mode: exit code reflects scan results. Equivalent to --fail-on high.
-    /// Overrides --fail-on if not explicitly set.
+    /// CI mode: exit code reflects scan results. Equivalent to `--fail-on high`.
+    /// Upgrades `--fail-on never` (the default) to `high`; explicit
+    /// `--fail-on high` or `--fail-on critical` values are preserved.
     #[arg(long, global = true)]
     pub ci: bool,
 }
