@@ -80,6 +80,7 @@ jobs:
     permissions:
       contents: write  # needed to create GitHub release
       attestations: write  # needed for provenance attestation
+      id-token: write  # needed for OIDC token (attest-build-provenance)
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
