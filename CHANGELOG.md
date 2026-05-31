@@ -2,6 +2,31 @@
 
 All notable changes to ApeGuard are documented here.
 
+## [Unreleased]
+
+## [0.3.0] — 2026-05-31
+
+### Added
+
+- **Checkov (Layer 6) — IaC misconfiguration scanning** — Wraps `checkov --directory <target> --output json` for Terraform, Kubernetes, Helm, CloudFormation, and ARM template analysis. Maps findings to UZTF pillars (Infrastructure, Network, Data). Install: `pip install checkov` or `brew install checkov`.
+
+- **Syft (Layer 7) — SBOM inventory** — Wraps `syft <target> -o json` to catalog dependencies (Rust crates, npm packages, Python wheels, Docker images, etc.). Reports Info-level findings per package with PURL evidence. Install: `brew install syft`.
+
+- **All 7 layers now available** — `1=secrets, 2=SAST, 3=SCA, 4=container, 5=DAST, 6=IaC, 7=SBOM`. Use `--layers 1,2,3,4,5,6,7` to run the full suite.
+
+### Changed
+
+- **CLI help text** — Updated `--layers` description to include layers 6 (Checkov) and 7 (Syft).
+- **Config defaults** — Added `checkov` and `syft` to `ScannerBinaries` struct for custom path support.
+- **MCP tool schema** — Extended `scan` tool input schema to document new layers.
+
+### Fixed
+
+- **Gitleaks capture reliability** — Uses `--report-path` with UUID temp file to prevent stdout/stderr pollution and race conditions (D49).
+- **HTML/MD/JSON/SARIF reports** — All formats now derive from the same `ZeroTrustScorecard` and `CanonicalFinding` data for consistency (D50).
+- **Tera template whitespace** — Uses `{%-` (whitespace trimming) to prevent blank lines in Markdown tables (D51).
+- **CI mode safety** — `--ci` flag implicitly upgrades `--fail-on` to `high` if not explicitly set (D52).
+
 ## [0.2.0] — 2026-05-31
 
 ### Added

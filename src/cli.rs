@@ -41,7 +41,7 @@ pub enum Command {
         /// Target directory or repository
         path: Option<String>,
 
-        /// Scanner layers to run (1=secrets, 2=SAST, 3=SCA, 4=container, 5=DAST)
+        /// Scanner layers to run (1=secrets, 2=SAST, 3=SCA, 4=container, 5=DAST, 6=IaC Checkov, 7=SBOM Syft)
         #[arg(long, value_delimiter = ',', default_value = "1,2,3,4")]
         layers: Vec<u8>,
 

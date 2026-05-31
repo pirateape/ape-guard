@@ -186,8 +186,8 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
     let containers = args.containers;
     let report_types = args.report_types;
     use crate::scanner::{
-        container::ContainerScanner, gitleaks::Gitleaks, semgrep::Semgrep, trivy::Trivy, Scanner,
-        ScannerResult,
+        checkov::Checkov, container::ContainerScanner, gitleaks::Gitleaks, semgrep::Semgrep,
+        syft::Syft, trivy::Trivy, Scanner, ScannerResult,
     };
     use std::time::Instant;
 
@@ -245,6 +245,14 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
                 if let Some(url) = &web_target {
                     scanners.push(Box::new(crate::scanner::dast::DastScanner::new(url)));
                 }
+            }
+            6 => {
+                // IaC scanning via Checkov
+                scanners.push(Box::new(Checkov::with_binary(cfg.binaries.checkov.clone())));
+            }
+            7 => {
+                // SBOM inventory via Syft
+                scanners.push(Box::new(Syft::with_binary(cfg.binaries.syft.clone())));
             }
             _ => tracing::warn!("Unknown layer: {}", layer),
         }
@@ -955,11 +963,13 @@ async fn print_version(quiet: bool) -> anyhow::Result<()> {
     quiet_println!(quiet, "");
 
     // Check if each scanner is available
-    let scanners: [(&str, &str, &[&str]); 4] = [
+    let scanners: [(&str, &str, &[&str]); 6] = [
         ("Gitleaks", "gitleaks", &["version"]),
         ("Semgrep", "semgrep", &["--version"]),
         ("Trivy", "trivy", &["--version"]),
         ("Nuclei", "nuclei", &["-version"]),
+        ("Checkov", "checkov", &["--version"]),
+        ("Syft", "syft", &["--version"]),
     ];
 
     for (name, binary, args) in &scanners {
