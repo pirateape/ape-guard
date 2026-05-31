@@ -47,9 +47,26 @@ pub enum ScannerType {
     TrivyVuln,
     TrivySecret,
     TrivyMisconfig,
+    TrivyContainer,
     Nuclei,
     Zap,
     Custom(String),
+}
+
+impl std::fmt::Display for ScannerType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScannerType::Gitleaks => write!(f, "Gitleaks"),
+            ScannerType::Semgrep => write!(f, "Semgrep"),
+            ScannerType::TrivyVuln => write!(f, "Trivy"),
+            ScannerType::TrivySecret => write!(f, "Trivy"),
+            ScannerType::TrivyMisconfig => write!(f, "Trivy"),
+            ScannerType::TrivyContainer => write!(f, "TrivyContainer"),
+            ScannerType::Nuclei => write!(f, "Nuclei"),
+            ScannerType::Zap => write!(f, "ZAP"),
+            ScannerType::Custom(name) => write!(f, "{}", name),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
@@ -75,6 +92,25 @@ pub struct ZeroTrustScorecard {
     pub pillars: Vec<PillarScore>,
     pub pillars_at_advanced_or_higher: u32,
     pub target_maturity: MaturityTier,
+    pub gap_analysis: Vec<GapAnalysis>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GapAnalysis {
+    pub pillar: String,
+    pub current_maturity: MaturityTier,
+    pub target_maturity: MaturityTier,
+    pub gap: GapLevel,
+    pub blocking_findings: u32,
+    pub recommendations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum GapLevel {
+    None,
+    Small,
+    Medium,
+    Large,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -191,8 +227,24 @@ mod tests {
             pillars: vec![],
             pillars_at_advanced_or_higher: 0,
             target_maturity: MaturityTier::Advanced,
+            gap_analysis: vec![],
         };
         assert_eq!(sc.overall_score, 75);
+    }
+
+    #[test]
+    fn test_gap_analysis_struct() {
+        let ga = GapAnalysis {
+            pillar: "identity".into(),
+            current_maturity: MaturityTier::Baseline,
+            target_maturity: MaturityTier::Advanced,
+            gap: GapLevel::Medium,
+            blocking_findings: 4,
+            recommendations: vec!["Rotate secrets".into()],
+        };
+        assert_eq!(ga.pillar, "identity");
+        assert_eq!(ga.gap, GapLevel::Medium);
+        assert_eq!(ga.blocking_findings, 4);
     }
 
     #[test]
@@ -204,7 +256,10 @@ mod tests {
             low: 25,
             info: 50,
         };
-        assert_eq!(fbs.critical + fbs.high + fbs.medium + fbs.low + fbs.info, 97);
+        assert_eq!(
+            fbs.critical + fbs.high + fbs.medium + fbs.low + fbs.info,
+            97
+        );
     }
 
     #[test]

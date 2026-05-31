@@ -2,7 +2,11 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(name = "apeguard", version, about = "Security posture assessment — one command, three reports, Zero Trust mapped")]
+#[command(
+    name = "apeguard",
+    version,
+    about = "Security posture assessment — one command, three reports, Zero Trust mapped"
+)]
 pub struct Args {
     #[command(subcommand)]
     pub command: Command,
@@ -38,6 +42,10 @@ pub enum Command {
         /// Web target URL (enables DAST)
         #[arg(long)]
         web: Option<String>,
+
+        /// Container image(s) to scan (can repeat: --container image1 --container image2)
+        #[arg(long)]
+        container: Vec<String>,
 
         /// Minimum severity (info, low, medium, high, critical)
         #[arg(long, default_value = "all")]
@@ -127,6 +135,21 @@ pub enum Command {
     /// Start the MCP server (Model Context Protocol) for AI agent integration
     #[command(name = "serve")]
     Serve,
+
+    /// Manage scan cache
+    #[command(name = "cache")]
+    Cache {
+        #[command(subcommand)]
+        subcommand: CacheSubcommand,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum CacheSubcommand {
+    /// Show cache statistics
+    Stats,
+    /// Prune old cache entries
+    Prune,
 }
 
 impl Command {
@@ -145,7 +168,7 @@ pub enum SeverityFilter {
     Critical,
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum)]
 pub enum OutputFormat {
     Md,
     Json,
@@ -154,21 +177,21 @@ pub enum OutputFormat {
     Pdf,
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum)]
 pub enum ReportType {
     Tech,
     Exec,
     Roadmap,
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum)]
 pub enum FailOnThreshold {
     Never,
     High,
     Critical,
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum)]
 pub enum CompareFormat {
     Text,
     Json,

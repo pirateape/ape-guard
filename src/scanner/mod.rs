@@ -3,6 +3,35 @@
 use crate::find::{CanonicalFinding, ScannerType};
 use async_trait::async_trait;
 use std::path::Path;
+use std::time::Duration;
+
+/// Check if a binary exists on the system PATH
+pub fn binary_exists(binary: &str) -> bool {
+    which::which(binary).is_ok()
+}
+
+/// Run a command with a timeout, returning its stdout on success
+pub async fn run_command_with_timeout(
+    binary: &str,
+    args: &[&str],
+    timeout_secs: u64,
+) -> Result<Vec<u8>, ScannerError> {
+    let cmd = tokio::process::Command::new(binary).args(args).output();
+
+    let timeout_dur = Duration::from_secs(timeout_secs);
+    match tokio::time::timeout(timeout_dur, cmd).await {
+        Ok(Ok(output)) => {
+            if output.status.success() || output.stdout.len() > 10 {
+                Ok(output.stdout)
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(ScannerError::ExecutionFailed(stderr.to_string()))
+            }
+        }
+        Ok(Err(e)) => Err(ScannerError::Io(e)),
+        Err(_) => Err(ScannerError::Timeout(timeout_secs)),
+    }
+}
 
 #[async_trait]
 pub trait Scanner: Send + Sync {
@@ -51,7 +80,7 @@ pub trait Scanner: Send + Sync {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Error variant is P3 (DAST), rest used
 pub enum ScannerResult {
     Complete {
         name: String,
@@ -70,7 +99,6 @@ pub enum ScannerResult {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
 pub enum ScannerError {
     #[error("Scanner not found: {0}")]
     NotFound(String),
@@ -88,6 +116,8 @@ pub enum ScannerError {
     Io(#[from] std::io::Error),
 }
 
+pub mod container;
+pub mod dast;
 pub mod gitleaks;
 pub mod semgrep;
 pub mod trivy;

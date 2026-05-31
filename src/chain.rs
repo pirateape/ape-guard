@@ -11,13 +11,27 @@ const CHAIN_PATTERNS: &[ChainPattern] = &[
     ChainPattern {
         name: "Credential Compromise Chain",
         description: "Hardcoded secrets lead to injection attacks and potential RCE",
-        stages: &["secret", "credential", "password", "injection", "rce", "xss"],
+        stages: &[
+            "secret",
+            "credential",
+            "password",
+            "injection",
+            "rce",
+            "xss",
+        ],
         risk_multiplier: 2.0,
     },
     ChainPattern {
         name: "Supply Chain Attack",
         description: "Vulnerable dependencies combined with misconfiguration create attack surface",
-        stages: &["vulnerability", "cve", "dependency", "misconfig", "iac", "docker"],
+        stages: &[
+            "vulnerability",
+            "cve",
+            "dependency",
+            "misconfig",
+            "iac",
+            "docker",
+        ],
         risk_multiplier: 1.5,
     },
     ChainPattern {
@@ -51,7 +65,7 @@ pub fn build_attack_chains(findings: &[CanonicalFinding]) -> Vec<AttackChain> {
     let dir_groups = group_by_directory(findings);
 
     // Step 2: For each directory group, check if findings form a pattern
-    for (_dir, group) in &dir_groups {
+    for group in dir_groups.values() {
         if group.len() < 2 {
             continue;
         }
@@ -99,7 +113,11 @@ pub fn build_attack_chains(findings: &[CanonicalFinding]) -> Vec<AttackChain> {
                         pattern.name,
                         pattern.description,
                         matched_stages.len(),
-                        matched_stages.iter().map(|s| **s).collect::<Vec<_>>().join(" → ")
+                        matched_stages
+                            .iter()
+                            .map(|s| **s)
+                            .collect::<Vec<_>>()
+                            .join(" → ")
                     ),
                     steps,
                     finding_ids: chain_finding_ids,
@@ -120,7 +138,7 @@ pub fn build_attack_chains(findings: &[CanonicalFinding]) -> Vec<AttackChain> {
             let related_ids: Vec<String> = finding
                 .cross_refs
                 .iter()
-                .map(|cr| format!("{}-{}", cr.scanner.to_string(), cr.rule_id))
+                .map(|cr| format!("{}-{}", cr.scanner, cr.rule_id))
                 .collect();
 
             chains.push(AttackChain {
@@ -131,7 +149,7 @@ pub fn build_attack_chains(findings: &[CanonicalFinding]) -> Vec<AttackChain> {
                     finding.rule_id, finding.title
                 ),
                 steps: vec![
-                    format!("{} detected by {}", finding.rule_id, finding.scanner.to_string()),
+                    format!("{} detected by {}", finding.rule_id, finding.scanner),
                     format!(
                         "Confirmed by {} other scanners: {}",
                         related_ids.len(),
@@ -153,9 +171,7 @@ pub fn build_attack_chains(findings: &[CanonicalFinding]) -> Vec<AttackChain> {
 }
 
 /// Group findings by their parent directory for proximity-based chaining.
-fn group_by_directory(
-    findings: &[CanonicalFinding],
-) -> HashMap<String, Vec<&CanonicalFinding>> {
+fn group_by_directory(findings: &[CanonicalFinding]) -> HashMap<String, Vec<&CanonicalFinding>> {
     let mut groups: HashMap<String, Vec<&CanonicalFinding>> = HashMap::new();
 
     for finding in findings {
@@ -177,9 +193,12 @@ fn group_by_directory(
 fn compute_chain_risk(
     findings: &[&CanonicalFinding],
     pattern: &ChainPattern,
-    matched_stages: &Vec<&&str>,
+    matched_stages: &[&&str],
 ) -> f32 {
-    let base_score: f32 = findings.iter().map(|f| severity_to_score(&f.severity) as f32).sum();
+    let base_score: f32 = findings
+        .iter()
+        .map(|f| severity_to_score(&f.severity) as f32)
+        .sum();
 
     let avg_score = if !findings.is_empty() {
         base_score / findings.len() as f32
@@ -224,10 +243,13 @@ fn build_chain_steps(findings: &[&CanonicalFinding]) -> Vec<String> {
             format!(
                 "[{}] {}: {} ({}:{})",
                 f.severity.tag(),
-                f.scanner.to_string(),
+                f.scanner,
                 f.title,
                 f.location.file.to_string_lossy(),
-                f.location.line.map(|l| l.to_string()).unwrap_or_else(|| "?".to_string()),
+                f.location
+                    .line
+                    .map(|l| l.to_string())
+                    .unwrap_or_else(|| "?".to_string()),
             )
         })
         .collect()
@@ -237,32 +259,29 @@ fn build_chain_steps(findings: &[&CanonicalFinding]) -> Vec<String> {
 fn generate_recommendation(pattern: &ChainPattern, matched_stages: &[&&str]) -> String {
     let stage_str: Vec<&str> = matched_stages.iter().map(|s| **s).collect();
 
-    if stage_str.contains(&"secret") && stage_str.contains(&"rce") {
-        "Rotate all exposed credentials immediately. Add credential scanning to CI and enforce code review for secrets.".into()
+    // Use the pattern's name and description as context for the recommendation
+    let base = if stage_str.contains(&"secret") && stage_str.contains(&"rce") {
+        "Rotate all exposed credentials immediately. Add credential scanning to CI and enforce code review for secrets."
     } else if stage_str.contains(&"vulnerability") && stage_str.contains(&"misconfig") {
-        "Patch vulnerable dependencies AND fix the misconfiguration. Run both SCA and IaC scans in CI pipeline.".into()
+        "Patch vulnerable dependencies AND fix the misconfiguration. Run both SCA and IaC scans in CI pipeline."
     } else if stage_str.contains(&"misconfig") && stage_str.contains(&"cve") {
-        "Harden infrastructure configs and patch CVE. Apply least-privilege IAM policies and enable vulnerability scanning.".into()
-    } else if stage_str.contains(&"injection") && (stage_str.contains(&"secret") || stage_str.contains(&"credential")) {
-        "Fix the injection vulnerability AND rotate exposed credentials. Add input validation and parameterized queries.".into()
+        "Harden infrastructure configs and patch CVE. Apply least-privilege IAM policies and enable vulnerability scanning."
+    } else if stage_str.contains(&"injection")
+        && (stage_str.contains(&"secret") || stage_str.contains(&"credential"))
+    {
+        "Fix the injection vulnerability AND rotate exposed credentials. Add input validation and parameterized queries."
     } else {
-        "Address all linked findings together — remediation in isolation leaves attack surface open.".into()
-    }
-}
+        "Address all linked findings together — remediation in isolation leaves attack surface open."
+    };
 
-// Scanner type display helper
-impl ScannerType {
-    fn to_string(&self) -> &'static str {
-        match self {
-            ScannerType::Gitleaks => "Gitleaks",
-            ScannerType::Semgrep => "Semgrep",
-            ScannerType::TrivyVuln => "Trivy",
-            ScannerType::TrivySecret => "Trivy",
-            ScannerType::TrivyMisconfig => "Trivy",
-            ScannerType::Nuclei => "Nuclei",
-            ScannerType::Zap => "ZAP",
-            ScannerType::Custom(_) => "Custom",
-        }
+    // Preface with pattern name and risk multiplier when it's high
+    if pattern.risk_multiplier >= 2.0 {
+        format!(
+            "[{} — Risk multiplier {:.1}x] {}",
+            pattern.name, pattern.risk_multiplier, base
+        )
+    } else {
+        format!("[{}] {}", pattern.name, base)
     }
 }
 
@@ -284,6 +303,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    #[allow(clippy::too_many_arguments)]
     fn make_finding(
         id: &str,
         rule_id: &str,
@@ -326,12 +346,24 @@ mod tests {
     fn test_credential_compromise_chain() {
         let findings = vec![
             make_finding(
-                "1", "gitleaks-aws-key", "AWS Secret Key", Severity::Critical,
-                "src/auth.go", 12, ScannerType::Gitleaks, vec![],
+                "1",
+                "gitleaks-aws-key",
+                "AWS Secret Key",
+                Severity::Critical,
+                "src/auth.go",
+                12,
+                ScannerType::Gitleaks,
+                vec![],
             ),
             make_finding(
-                "2", "semgrep-sqli", "SQL Injection", Severity::High,
-                "src/auth.go", 42, ScannerType::Semgrep, vec![],
+                "2",
+                "semgrep-sqli",
+                "SQL Injection",
+                Severity::High,
+                "src/auth.go",
+                42,
+                ScannerType::Semgrep,
+                vec![],
             ),
         ];
 
@@ -344,12 +376,24 @@ mod tests {
     fn test_supply_chain_attack() {
         let findings = vec![
             make_finding(
-                "1", "CVE-2024-1234", "Critical CVE in log4j", Severity::Critical,
-                "lib/pom.xml", 1, ScannerType::TrivyVuln, vec![],
+                "1",
+                "CVE-2024-1234",
+                "Critical CVE in log4j",
+                Severity::Critical,
+                "lib/pom.xml",
+                1,
+                ScannerType::TrivyVuln,
+                vec![],
             ),
             make_finding(
-                "2", "trivy-misconfig", "Docker privileged mode", Severity::High,
-                "deploy/Dockerfile", 5, ScannerType::TrivyMisconfig, vec![],
+                "2",
+                "trivy-misconfig",
+                "Docker privileged mode",
+                Severity::High,
+                "deploy/Dockerfile",
+                5,
+                ScannerType::TrivyMisconfig,
+                vec![],
             ),
         ];
 
@@ -362,12 +406,24 @@ mod tests {
     fn test_same_directory_chain() {
         let findings = vec![
             make_finding(
-                "1", "gitleaks-password", "Hardcoded password", Severity::Critical,
-                "src/api/handler.py", 10, ScannerType::Gitleaks, vec![],
+                "1",
+                "gitleaks-password",
+                "Hardcoded password",
+                Severity::Critical,
+                "src/api/handler.py",
+                10,
+                ScannerType::Gitleaks,
+                vec![],
             ),
             make_finding(
-                "2", "semgrep-sqli", "SQL Injection", Severity::High,
-                "src/api/handler.py", 45, ScannerType::Semgrep, vec![],
+                "2",
+                "semgrep-sqli",
+                "SQL Injection",
+                Severity::High,
+                "src/api/handler.py",
+                45,
+                ScannerType::Semgrep,
+                vec![],
             ),
         ];
 
@@ -388,12 +444,16 @@ mod tests {
             },
         ];
 
-        let findings = vec![
-            make_finding(
-                "1", "gitleaks-token", "GitHub Token", Severity::Critical,
-                "src/secrets.env", 1, ScannerType::Gitleaks, cross_refs,
-            ),
-        ];
+        let findings = vec![make_finding(
+            "1",
+            "gitleaks-token",
+            "GitHub Token",
+            Severity::Critical,
+            "src/secrets.env",
+            1,
+            ScannerType::Gitleaks,
+            cross_refs,
+        )];
 
         let chains = build_attack_chains(&findings);
         let confirmation_chains: Vec<_> = chains
@@ -408,12 +468,16 @@ mod tests {
 
     #[test]
     fn test_single_finding_no_chain() {
-        let findings = vec![
-            make_finding(
-                "1", "gitleaks-token", "API Token", Severity::Medium,
-                "src/config.js", 1, ScannerType::Gitleaks, vec![],
-            ),
-        ];
+        let findings = vec![make_finding(
+            "1",
+            "gitleaks-token",
+            "API Token",
+            Severity::Medium,
+            "src/config.js",
+            1,
+            ScannerType::Gitleaks,
+            vec![],
+        )];
 
         let chains = build_attack_chains(&findings);
         // Single finding with no cross-refs = no chain
@@ -424,12 +488,24 @@ mod tests {
     fn test_infrastructure_escalation_chain() {
         let findings = vec![
             make_finding(
-                "1", "trivy-misconfig", "S3 bucket public", Severity::High,
-                "terraform/main.tf", 5, ScannerType::TrivyMisconfig, vec![],
+                "1",
+                "trivy-misconfig",
+                "S3 bucket public",
+                Severity::High,
+                "terraform/main.tf",
+                5,
+                ScannerType::TrivyMisconfig,
+                vec![],
             ),
             make_finding(
-                "2", "CVE-2024-5678", "RCE in web server", Severity::Critical,
-                "terraform/main.tf", 20, ScannerType::TrivyVuln, vec![],
+                "2",
+                "CVE-2024-5678",
+                "RCE in web server",
+                Severity::Critical,
+                "terraform/main.tf",
+                20,
+                ScannerType::TrivyVuln,
+                vec![],
             ),
         ];
 
@@ -452,22 +528,43 @@ mod tests {
     fn test_risk_score_capped() {
         let findings = vec![
             make_finding(
-                "1", "secret-password", "Root password", Severity::Critical,
-                "src/main.rs", 1, ScannerType::Gitleaks, vec![],
+                "1",
+                "secret-password",
+                "Root password",
+                Severity::Critical,
+                "src/main.rs",
+                1,
+                ScannerType::Gitleaks,
+                vec![],
             ),
             make_finding(
-                "2", "rce-backdoor", "Remote code execution", Severity::Critical,
-                "src/main.rs", 10, ScannerType::Semgrep, vec![],
+                "2",
+                "rce-backdoor",
+                "Remote code execution",
+                Severity::Critical,
+                "src/main.rs",
+                10,
+                ScannerType::Semgrep,
+                vec![],
             ),
             make_finding(
-                "3", "injection", "Command injection", Severity::Critical,
-                "src/main.rs", 20, ScannerType::Semgrep, vec![],
+                "3",
+                "injection",
+                "Command injection",
+                Severity::Critical,
+                "src/main.rs",
+                20,
+                ScannerType::Semgrep,
+                vec![],
             ),
         ];
 
         let chains = build_attack_chains(&findings);
         for chain in &chains {
-            assert!(chain.risk_score <= 10.0, "Risk score should be capped at 10.0");
+            assert!(
+                chain.risk_score <= 10.0,
+                "Risk score should be capped at 10.0"
+            );
         }
     }
 

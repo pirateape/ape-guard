@@ -170,9 +170,7 @@ fn classify_artifact(path: &Path, filename: &str, dirname: &str) -> ArtifactType
 /// Extract component names from content based on artifact type.
 fn extract_components(content: &str, artifact_type: &ArtifactType) -> Vec<String> {
     match artifact_type {
-        ArtifactType::MermaidDiagram | ArtifactType::C4Model => {
-            extract_mermaid_components(content)
-        }
+        ArtifactType::MermaidDiagram | ArtifactType::C4Model => extract_mermaid_components(content),
         ArtifactType::ArchitectureDoc => extract_markdown_components(content),
         _ => Vec::new(),
     }
@@ -217,7 +215,8 @@ fn extract_mermaid_node(line: &str) -> Option<String> {
 
     // Match node ID followed by bracket content: NODE_ID[content] or NODE_ID(content) etc.
     // First find the node ID (alphanumeric starting with letter)
-    let node_start = trimmed.find(|c: char| c.is_ascii_uppercase() || c.is_ascii_lowercase() || c == '_')?;
+    let node_start =
+        trimmed.find(|c: char| c.is_ascii_uppercase() || c.is_ascii_lowercase() || c == '_')?;
     let after_id = &trimmed[node_start..];
 
     // Extract node ID
@@ -315,10 +314,8 @@ fn extract_markdown_components(content: &str) -> Vec<String> {
         if trimmed.starts_with("### ") || trimmed.starts_with("## ") {
             let heading = trimmed.trim_start_matches('#').trim();
             // Filter out generic headings
-            if !is_generic_heading(heading) {
-                if seen.insert(heading.to_string()) {
-                    components.push(heading.to_string());
-                }
+            if !is_generic_heading(heading) && seen.insert(heading.to_string()) {
+                components.push(heading.to_string());
             }
         }
     }
@@ -327,11 +324,11 @@ fn extract_markdown_components(content: &str) -> Vec<String> {
     for line in content.lines() {
         let trimmed = line.trim();
         if (trimmed.starts_with("- ") || trimmed.starts_with("* "))
-            && (trimmed.contains("Service") || trimmed.contains("API") || trimmed.contains("Database"))
+            && (trimmed.contains("Service")
+                || trimmed.contains("API")
+                || trimmed.contains("Database"))
         {
-            let name = trimmed
-                .trim_start_matches(|c| c == '-' || c == '*' || c == ' ')
-                .to_string();
+            let name = trimmed.trim_start_matches(['-', '*', ' ']).to_string();
             if seen.insert(name.clone()) {
                 components.push(name);
             }
@@ -371,9 +368,9 @@ fn extract_dependencies(content: &str) -> Vec<(String, String)> {
     if let Some(re) = re {
         for line in content.lines() {
             for caps in re.captures_iter(line) {
-                let from = caps.get(1).unwrap().as_str().to_string();
-                let to = caps.get(2).unwrap().as_str().to_string();
-                deps.push((from, to));
+                if let (Some(from), Some(to)) = (caps.get(1), caps.get(2)) {
+                    deps.push((from.as_str().to_string(), to.as_str().to_string()));
+                }
             }
         }
     }
@@ -421,11 +418,10 @@ fn parse_adr(content: &str) -> Vec<DecisionRecord> {
 
 /// Parse a single ADR title line.
 fn parse_adr_title(line: &str) -> Option<(String, String)> {
-    let re =
-        regex::Regex::new(r#"^#+\s*(?:ADR\s*[-:]\s*)?(\d+)\s*[-:]\s*(.+)$"#).ok()?;
+    let re = regex::Regex::new(r#"^#+\s*(?:ADR\s*[-:]\s*)?(\d+)\s*[-:]\s*(.+)$"#).ok()?;
     let caps = re.captures(line)?;
-    let id = format!("ADR-{}", caps.get(1).unwrap().as_str());
-    let title = caps.get(2).unwrap().as_str().trim().to_string();
+    let id = format!("ADR-{}", caps.get(1)?.as_str());
+    let title = caps.get(2)?.as_str().trim().to_string();
     Some((id, title))
 }
 
@@ -519,9 +515,9 @@ pub fn assess_component_risks(
             let matches = aliases.iter().any(|alias| {
                 let alias_lower = alias.to_lowercase();
                 path_str.contains(&alias_lower)
-                    || alias_lower.split_whitespace().any(|word| {
-                        word.len() > 3 && path_str.contains(word)
-                    })
+                    || alias_lower
+                        .split_whitespace()
+                        .any(|word| word.len() > 3 && path_str.contains(word))
             });
 
             if matches {

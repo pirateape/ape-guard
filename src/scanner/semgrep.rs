@@ -16,6 +16,13 @@ impl Semgrep {
             binary: "semgrep".to_string(),
         }
     }
+
+    /// Use a custom binary path (e.g. from .apeguard.yaml `binaries.semgrep`)
+    pub fn with_binary(path: Option<String>) -> Self {
+        Semgrep {
+            binary: path.unwrap_or_else(|| "semgrep".to_string()),
+        }
+    }
 }
 
 #[async_trait]
@@ -33,12 +40,10 @@ impl Scanner for Semgrep {
     }
 
     async fn check_installed(&self) -> Result<bool, ScannerError> {
-        Ok(tokio::process::Command::new(&self.binary)
-            .arg("--version")
-            .output()
-            .await
-            .map(|o| o.status.success())
-            .unwrap_or(false))
+        if !crate::scanner::binary_exists(&self.binary) {
+            return Err(ScannerError::NotFound(self.binary.clone()));
+        }
+        Ok(true)
     }
 
     async fn version(&self) -> Result<String, ScannerError> {
@@ -52,29 +57,18 @@ impl Scanner for Semgrep {
     }
 
     async fn scan_raw(&self, path: &Path) -> Result<Vec<u8>, ScannerError> {
-        let output = tokio::process::Command::new(&self.binary)
-            .arg("scan")
-            .arg("--json")
-            .arg("--quiet")
-            .arg("--metrics")
-            .arg("off")
-            .arg("--config")
-            .arg("p/security-audit")
-            .arg("--config")
-            .arg("p/owasp-top-ten")
-            .arg("--use-git-ignore")
-            .arg(path)
-            .output()
-            .await
-            .map_err(ScannerError::Io)?;
-
-        // Semgrep returns exit code 0 for no findings, 1 for findings found
-        if output.status.success() || output.status.code() == Some(1) {
-            Ok(output.stdout)
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(ScannerError::ExecutionFailed(stderr.to_string()))
-        }
+        let path_str = path.to_string_lossy().to_string();
+        let args = [
+            "scan",
+            "--json",
+            "--quiet",
+            "--metrics",
+            "off",
+            "--config",
+            "p/default",
+            path_str.as_str(),
+        ];
+        crate::scanner::run_command_with_timeout(&self.binary, &args, 120).await
     }
 
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
@@ -120,6 +114,7 @@ impl Scanner for Semgrep {
             serde_json::from_slice(raw).map_err(|e| ScannerError::ParseFailed(e.to_string()))?;
 
         let now = chrono::Utc::now().format("%Y%m%d").to_string();
+        let nonce = uuid::Uuid::new_v4().simple().to_string();
 
         let canonical: Vec<CanonicalFinding> = results
             .results
@@ -142,13 +137,18 @@ impl Scanner for Semgrep {
                 });
 
                 CanonicalFinding {
-                    id: format!("AG-SG-{}-{:04}", now, i + 1),
+                    id: format!("AG-SG-{}-{}-{:04}", now, &nonce[..8], i + 1),
                     scanner: ScannerType::Semgrep,
                     scanner_version: None,
                     rule_id: f.check_id.clone(),
                     severity: sev,
                     confidence: Confidence::Firm,
-                    title: f.check_id.rsplit('.').next().unwrap_or(&f.check_id).to_string(),
+                    title: f
+                        .check_id
+                        .rsplit('.')
+                        .next()
+                        .unwrap_or(&f.check_id)
+                        .to_string(),
                     description: f.extra.message.clone(),
                     location: FindingLocation {
                         file: std::path::PathBuf::from(&f.path),
@@ -171,5 +171,101 @@ impl Scanner for Semgrep {
             .collect();
 
         Ok(canonical)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_output_real_fixture() {
+        let json = r#"{
+            "results": [
+                {
+                    "check_id": "javascript.express.security.audit.xss.mustache-escape",
+                    "path": "src/routes/api.js",
+                    "start": { "line": 45, "col": 12 },
+                    "end": { "line": 45, "col": 38 },
+                    "extra": {
+                        "severity": "ERROR",
+                        "message": "User-controlled data is rendered without escaping",
+                        "metadata": { "cwe": "CWE-79" },
+                        "fix": "Use res.json() instead of res.send()",
+                        "lines": "res.send(template.render(data))"
+                    }
+                },
+                {
+                    "check_id": "python.django.security.injection.sql.sql-format",
+                    "path": "app/views.py",
+                    "start": { "line": 102, "col": 5 },
+                    "end": { "line": 102, "col": 60 },
+                    "extra": {
+                        "severity": "WARNING",
+                        "message": "SQL injection via string formatting",
+                        "metadata": { "CWE": "CWE-89" }
+                    }
+                }
+            ],
+            "errors": []
+        }"#;
+
+        let scanner = Semgrep::new();
+        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+
+        assert_eq!(findings.len(), 2);
+
+        // First finding: ERROR → High
+        let f1 = &findings[0];
+        assert_eq!(
+            f1.rule_id,
+            "javascript.express.security.audit.xss.mustache-escape"
+        );
+        assert_eq!(f1.severity, Severity::High);
+        assert_eq!(f1.location.line, Some(45));
+        assert_eq!(f1.location.column, Some(12));
+        assert_eq!(f1.cwe.as_deref(), Some("CWE-79"));
+        assert_eq!(
+            f1.remediation.as_deref(),
+            Some("Use res.json() instead of res.send()")
+        );
+        assert_eq!(f1.title, "mustache-escape"); // last segment of check_id
+
+        // Second finding: WARNING → Medium
+        let f2 = &findings[1];
+        assert_eq!(f2.severity, Severity::Medium);
+        assert_eq!(f2.cwe.as_deref(), Some("CWE-89"));
+    }
+
+    #[test]
+    fn test_parse_output_empty_results() {
+        let json = r#"{ "results": [], "errors": [] }"#;
+        let scanner = Semgrep::new();
+        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_parse_output_info_severity() {
+        let json = r#"{
+            "results": [{
+                "check_id": "test.info-rule",
+                "path": "test.py",
+                "start": { "line": 1, "col": 1 },
+                "end": { "line": 1, "col": 10 },
+                "extra": { "severity": "INFO", "message": "info finding" }
+            }]
+        }"#;
+
+        let scanner = Semgrep::new();
+        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Low); // INFO → Low
+    }
+
+    #[test]
+    fn test_parse_output_invalid_json() {
+        let scanner = Semgrep::new();
+        assert!(scanner.parse_output(b"not json").is_err());
     }
 }

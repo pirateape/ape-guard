@@ -13,6 +13,19 @@ Cargo.lock
 # ApeGuard local state
 .apeguard/
 
+# CodeGraph (local code index)
+.codegraph/
+
+# Graphify (knowledge graph artifacts)
+.graphify/
+*.graphify.json
+*.graphify.html
+
+# MemPalace (AI memory)
+.mempalace/
+mempalace.json
+*.mempalace.md
+
 # IDE
 .idea/
 *.iml

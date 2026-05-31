@@ -16,6 +16,13 @@ impl Gitleaks {
             binary: "gitleaks".to_string(),
         }
     }
+
+    /// Use a custom binary path (e.g. from .apeguard.yaml `binaries.gitleaks`)
+    pub fn with_binary(path: Option<String>) -> Self {
+        Gitleaks {
+            binary: path.unwrap_or_else(|| "gitleaks".to_string()),
+        }
+    }
 }
 
 #[async_trait]
@@ -33,9 +40,10 @@ impl Scanner for Gitleaks {
     }
 
     async fn check_installed(&self) -> Result<bool, ScannerError> {
-        which::which(&self.binary)
-            .map(|_| true)
-            .or(Ok(false))
+        if !crate::scanner::binary_exists(&self.binary) {
+            return Err(ScannerError::NotFound(self.binary.clone()));
+        }
+        Ok(true)
     }
 
     async fn version(&self) -> Result<String, ScannerError> {
@@ -52,34 +60,21 @@ impl Scanner for Gitleaks {
         // Determine if git repo or not
         let is_git = path.join(".git").exists();
 
-        let mut cmd = tokio::process::Command::new(&self.binary);
-        cmd.arg("detect")
-            .arg("--source")
-            .arg(path)
-            .arg("-f")
-            .arg("json")
-            .arg("--no-color");
+        let mut args = vec![
+            "detect".to_string(),
+            "--source".to_string(),
+            path.to_string_lossy().to_string(),
+            "-f".to_string(),
+            "json".to_string(),
+            "--no-color".to_string(),
+        ];
 
         if !is_git {
-            cmd.arg("--no-git");
+            args.push("--no-git".to_string());
         }
 
-        let output = cmd
-            .output()
-            .await
-            .map_err(ScannerError::Io)?;
-
-        if output.status.success() {
-            // No findings — empty array
-            Ok(output.stdout)
-        } else if output.status.code() == Some(1) {
-            // Findings found — still stdout contains the results
-            Ok(output.stdout)
-        } else {
-            // Real error
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(ScannerError::ExecutionFailed(stderr.to_string()))
-        }
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        crate::scanner::run_command_with_timeout(&self.binary, &arg_refs, 30).await
     }
 
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
@@ -118,16 +113,17 @@ impl Scanner for Gitleaks {
         };
 
         let now = chrono::Utc::now().format("%Y%m%d").to_string();
+        let nonce = uuid::Uuid::new_v4().simple().to_string();
 
         let canonical: Vec<CanonicalFinding> = findings
             .iter()
             .enumerate()
             .map(|(i, f)| CanonicalFinding {
-                id: format!("AG-{}-{:04}", now, i + 1),
+                id: format!("AG-{}-{}-{:04}", now, &nonce[..8], i + 1),
                 scanner: ScannerType::Gitleaks,
                 scanner_version: None, // populated by scanner outer flow
                 rule_id: f.RuleID.clone(),
-                severity: map_gitleaks_severity(&f.RuleID),
+                severity: Severity::High, // overridden by GITLEAKS_SEVERITY_MAP in normalize_findings()
                 confidence: Confidence::Certain,
                 title: format!("Secret: {}", f.RuleID),
                 description: f.Description.clone(),
@@ -137,7 +133,7 @@ impl Scanner for Gitleaks {
                     column: None,
                     commit: f.Commit.clone(),
                     author: f.Author.clone(),
-                    snippet: Some(format!("{}", f.Match)),
+                    snippet: Some(f.Match.to_string()),
                 },
                 cwe: Some("CWE-798".to_string()), // Hardcoded Credentials
                 cvss: Some(7.5),
@@ -148,7 +144,9 @@ impl Scanner for Gitleaks {
                 )),
                 fix_effort: Some("15 minutes".to_string()),
                 evidence: Some(format!("Match: {}", f.Match)),
-                tags: f.Tags.as_ref()
+                tags: f
+                    .Tags
+                    .as_ref()
                     .map(|t| t.split(',').map(|s| s.trim().to_string()).collect())
                     .unwrap_or_default(),
                 zt_pillars: vec!["identity".to_string(), "devices".to_string()],
@@ -160,9 +158,91 @@ impl Scanner for Gitleaks {
     }
 }
 
-fn map_gitleaks_severity(_rule_id: &str) -> Severity {
-    // Gitleaks doesn't natively report severity per finding.
-    // In a real implementation, this would use a rule→severity mapping table.
-    // Default: all gitleaks findings are at least Medium.
-    Severity::High
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_output_real_fixture() {
+        let json = r#"[
+            {
+                "Description": "AWS Access Key ID",
+                "StartLine": 42,
+                "EndLine": 42,
+                "File": "src/config.py",
+                "Match": "AKIAIOSFODNN7EXAMPLE",
+                "Secret": "AKIAIOSFODNN7EXAMPLE",
+                "RuleID": "aws-access-key-id",
+                "Fingerprint": "abc123:aws-access-key-id:42",
+                "Author": "dev@example.com",
+                "Commit": "a1b2c3d4",
+                "Tags": "aws,credentials"
+            },
+            {
+                "Description": "Generic API Key",
+                "StartLine": 10,
+                "EndLine": 10,
+                "File": ".env",
+                "Match": "API_KEY=sk-1234567890abcdef",
+                "Secret": "sk-1234567890abcdef",
+                "RuleID": "generic-api-key",
+                "Fingerprint": "def456:generic-api-key:10"
+            }
+        ]"#;
+
+        let scanner = Gitleaks::new();
+        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+
+        assert_eq!(findings.len(), 2);
+
+        // First finding: AWS key
+        let f1 = &findings[0];
+        assert_eq!(f1.rule_id, "aws-access-key-id");
+        assert_eq!(f1.severity, Severity::High);
+        assert_eq!(f1.location.line, Some(42));
+        assert_eq!(f1.cwe.as_deref(), Some("CWE-798"));
+        assert!(f1.remediation.as_ref().unwrap().contains("Rotate"));
+        assert_eq!(f1.location.commit.as_deref(), Some("a1b2c3d4"));
+        assert!(f1.tags.contains(&"aws".to_string()));
+
+        // Second finding: generic API key
+        let f2 = &findings[1];
+        assert_eq!(f2.rule_id, "generic-api-key");
+        assert_eq!(f2.location.line, Some(10));
+        assert!(f2.tags.is_empty()); // no Tags field in fixture
+    }
+
+    #[test]
+    fn test_parse_output_empty_array() {
+        let scanner = Gitleaks::new();
+        let findings = scanner.parse_output(b"[]").unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_parse_output_empty_bytes() {
+        let scanner = Gitleaks::new();
+        let findings = scanner.parse_output(b"").unwrap();
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_parse_output_single_object_fallback() {
+        // Gitleaks may return a single object without array brackets
+        let json = r#"{
+            "Description": "test",
+            "StartLine": 1,
+            "EndLine": 1,
+            "File": "test.txt",
+            "Match": "secret",
+            "Secret": "secret",
+            "RuleID": "test-rule",
+            "Fingerprint": "fp1"
+        }"#;
+
+        let scanner = Gitleaks::new();
+        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "test-rule");
+    }
 }

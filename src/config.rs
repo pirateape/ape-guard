@@ -23,6 +23,10 @@ pub struct Config {
     /// Report settings
     pub report: ReportConfig,
 
+    /// LLM remediation settings (Ollama)
+    #[serde(default)]
+    pub llm: LlmConfig,
+
     /// Output directory
     pub output_dir: PathBuf,
 }
@@ -47,10 +51,31 @@ pub struct ReportConfig {
     pub types: Vec<String>,
 }
 
+/// LLM remediation settings — mirrors llm::LlmConfig to keep config serialisable
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmConfig {
+    /// Ollama endpoint (default: http://localhost:11434)
+    pub endpoint: String,
+    /// Model name (default: codellama)
+    pub model: String,
+    /// Whether LLM enhancement is enabled
+    pub enabled: bool,
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        LlmConfig {
+            endpoint: "http://localhost:11434".to_string(),
+            model: "codellama".to_string(),
+            enabled: true,
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
-            layers: vec![1, 2, 3],
+            layers: vec![1, 2, 3, 4],
             severity: "all".to_string(),
             binaries: ScannerBinaries {
                 gitleaks: None,
@@ -64,8 +89,13 @@ impl Default for Config {
             },
             report: ReportConfig {
                 formats: vec!["md".to_string()],
-                types: vec!["tech".to_string(), "exec".to_string(), "roadmap".to_string()],
+                types: vec![
+                    "tech".to_string(),
+                    "exec".to_string(),
+                    "roadmap".to_string(),
+                ],
             },
+            llm: LlmConfig::default(),
             output_dir: PathBuf::from(".apeguard/reports"),
         }
     }
@@ -102,18 +132,27 @@ pub fn load(args: &cli::Args) -> anyhow::Result<Config> {
 
     // 2. Override from env vars
     if let Ok(val) = std::env::var("APEGUARD_LAYERS") {
-        cfg.layers = val.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+        cfg.layers = val
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
     }
     if let Ok(val) = std::env::var("APEGUARD_SEVERITY") {
         cfg.severity = val;
     }
-    if let Ok(val) = std::env::var("APEGARD_OUTPUT_DIR") {
+    if let Ok(val) = std::env::var("APEGUARD_OUTPUT_DIR") {
         cfg.output_dir = PathBuf::from(val);
     }
 
     // 3. Override from CLI args
     if args.command.is_scan() {
-        if let cli::Command::Scan { ref layers, ref severity, ref output_dir, .. } = args.command {
+        if let cli::Command::Scan {
+            ref layers,
+            ref severity,
+            ref output_dir,
+            ..
+        } = args.command
+        {
             if !layers.is_empty() {
                 cfg.layers = layers.clone();
             }
@@ -149,6 +188,12 @@ fn merge(base: &mut Config, overlay: Config) {
     if overlay.cache.enabled != base.cache.enabled {
         base.cache.enabled = overlay.cache.enabled;
     }
+    if overlay.cache.path.as_path() != std::path::Path::new(".apeguard/cache") {
+        base.cache.path = overlay.cache.path;
+    }
+    if overlay.cache.ttl_hours != 24 {
+        base.cache.ttl_hours = overlay.cache.ttl_hours;
+    }
     if overlay.report.formats != vec!["md"] {
         base.report.formats = overlay.report.formats;
     }
@@ -159,10 +204,8 @@ pub fn generate_init(path: Option<String>, _template: cli::InitTemplate) -> anyh
     let target = path.map(PathBuf::from).unwrap_or_default();
     let config_path = if target.as_os_str().is_empty() {
         PathBuf::from(".apeguard.yaml")
-    } else if target.is_dir() {
-        target.join(".apeguard.yaml")
     } else {
-        target.join(".apeguard.yaml")
+        target.join(".apeguard.yaml") // works for both file and dir targets
     };
 
     if config_path.exists() {
@@ -199,7 +242,7 @@ mod tests {
     #[test]
     fn test_config_defaults() {
         let cfg = Config::default();
-        assert_eq!(cfg.layers, vec![1, 2, 3]);
+        assert_eq!(cfg.layers, vec![1, 2, 3, 4]);
         assert_eq!(cfg.severity, "all");
         assert!(cfg.cache.enabled);
         assert_eq!(cfg.report.formats, vec!["md"]);
@@ -222,21 +265,24 @@ mod tests {
         merge(&mut base, overlay);
         assert_eq!(base.layers, vec![1]);
         assert_eq!(base.severity, "high");
-        assert_eq!(base.binaries.gitleaks, Some("/usr/local/bin/gitleaks".into()));
+        assert_eq!(
+            base.binaries.gitleaks,
+            Some("/usr/local/bin/gitleaks".into())
+        );
         assert!(base.binaries.semgrep.is_none());
     }
 
     #[test]
     fn test_merge_empty_layers_does_not_override() {
         let mut base = Config::default();
-        assert_eq!(base.layers, vec![1, 2, 3]);
+        assert_eq!(base.layers, vec![1, 2, 3, 4]);
         let overlay = Config {
             layers: vec![],
             ..Config::default()
         };
         merge(&mut base, overlay);
         // Should keep original layers when overlay layers are empty
-        assert_eq!(base.layers, vec![1, 2, 3]);
+        assert_eq!(base.layers, vec![1, 2, 3, 4]);
     }
 
     #[test]
