@@ -111,6 +111,12 @@ apeguard cache stats
 apeguard report
 ```
 
+<p align="center">
+  <img src="assets/apeguard-demo.gif" alt="ApeGuard demo — version check and help" width="90%">
+  <br>
+  <sub>Demo GIF generated with <a href="https://github.com/charmbracelet/vhs">VHS</a>. Regenerate via <code>vhs demo.tape</code>.</sub>
+</p>
+
 ---
 
 ## Commands
