@@ -2,6 +2,10 @@
 
 **One-command security posture assessment** — layered scanning, [Unified Zero Trust Framework](https://github.com/pirateape/unified-zero-trust-framework) mapping, multi-audience reports.
 
+[![CI](https://github.com/pirateape/ape-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/pirateape/ape-guard/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/pirateape/ape-guard)](https://github.com/pirateape/ape-guard/releases)
+[![License](https://img.shields.io/badge/License-Elastic_2.0-blue.svg)](LICENSE)
+
 ```bash
 # Single command — full assessment
 apeguard scan
