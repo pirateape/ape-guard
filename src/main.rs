@@ -513,9 +513,9 @@ async fn run_report(
     let (scan_id, findings) = if let Some(snap) = snapshot {
         if snap == "latest" || snap == "last" {
             // Load latest scan
-            let (sid, findings) = cache
-                .get_latest_scan_findings()?
-                .ok_or_else(|| anyhow::anyhow!("No cached scans found. Run `apeguard scan` first."))?;
+            let (sid, findings) = cache.get_latest_scan_findings()?.ok_or_else(|| {
+                anyhow::anyhow!("No cached scans found. Run `apeguard scan` first.")
+            })?;
             (sid, findings)
         } else {
             // Load specific snapshot by ID
