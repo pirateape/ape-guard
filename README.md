@@ -392,6 +392,8 @@ You may use, copy, modify, and redistribute this software in any project — inc
 ## Related
 
 - [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — 8-pillar maturity model with quantitative scoring (what this tool implements)
+- [ApeGuard GitHub Action](https://github.com/pirateape/apeguard-action) — Run layered scans in CI/CD pipelines
+- [Azure Security Audit Framework](https://github.com/pirateape/Azure-Security) — 148+ Azure defense-in-depth resources (KQL, PowerShell, Policies, Workbooks)
 - [CISA Zero Trust Maturity Model](https://www.cisa.gov/zero-trust-maturity-model) — Foundational ZT framework from the US Federal government (UZTF builds on this)
 - [MITRE ATT&CK](https://attack.mitre.org/) — Adversarial tactics & techniques
 - [Model Context Protocol](https://modelcontextprotocol.io/) — AI agent integration standard
