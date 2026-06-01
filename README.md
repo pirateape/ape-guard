@@ -20,7 +20,7 @@ apeguard scan
 
 ## Features
 
-- **5-layer scanning pipeline** — Secrets → SAST → SCA → Container → DAST in a single command
+- **7-layer scanning pipeline** — Secrets → SAST → SCA → Container → DAST → IaC → SBOM in a single command
 - **Unified Zero Trust Framework mapping** — Every finding maps to the 8-pillar [UZTF](https://github.com/pirateape/unified-zero-trust-framework) with maturity scoring (Baseline → Advanced → Adaptive). Builds on the CISA Zero Trust Maturity Model as a foundational stepping stone.
 - **Multi-audience reports** — Technical (engineers), Executive (leadership), Roadmap (EMs)
 - **Multi-format output** — Markdown, JSON, SARIF, HTML
@@ -56,6 +56,14 @@ brew install trivy
 # DAST / dynamic scanning (Layer 5 — optional)
 brew install nuclei
 # or: https://github.com/projectdiscovery/nuclei/releases
+
+# IaC misconfiguration scanning (Layer 6 — optional)
+pip install checkov
+# or: brew install checkov
+
+# SBOM inventory (Layer 7 — optional)
+brew install syft
+# or: https://github.com/anchore/syft/releases
 ```
 
 ### From source (Rust)
@@ -141,7 +149,7 @@ apeguard report
 
 | Option | Description |
 |--------|-------------|
-| `--layers` | Scanner layers to run: `1` (secrets), `2` (SAST), `3` (SCA), `4` (container), `5` (DAST) |
+| `--layers` | Scanner layers to run: `1` (secrets), `2` (SAST), `3` (SCA), `4` (container), `5` (DAST), `6` (IaC), `7` (SBOM) |
 | `--web` | Web target URL — enables DAST scanning via Nuclei |
 | `--container` | Container image(s) to scan (repeatable) |
 | `--severity` | Minimum finding severity threshold |
@@ -163,6 +171,8 @@ Layer 2 ─ SAST ──────── Semgrep ───── static analysi
 Layer 3 ─ SCA vulns ─── Trivy fs ──── filesystem dependency scanning
 Layer 4 ─ Container ─── Trivy image ─ container image vulnerability scanning
 Layer 5 ─ DAST ──────── Nuclei ────── dynamic web/template scanning
+Layer 6 ─ IaC ───────── Checkov ───── infrastructure-as-code misconfiguration scanning
+Layer 7 ─ SBOM ──────── Syft ──────── software bill of materials inventory
 ```
 
 ### Pipeline
@@ -174,7 +184,9 @@ Target
   ├─ semgrep ───┤
   ├─ trivy fs ──┤
   ├─ trivy image┤
-  ├─ nuclei ────┘
+  ├─ nuclei ────┤
+  ├─ checkov ───┤
+  ├─ syft ──────┘
   │
   ▼
 Deduplication ─── (file, line, rule_id) composite key
@@ -308,7 +320,7 @@ apeguard serve
 
 ```bash
 # Clone and build
-git clone https://github.com/apeguard/cli
+git clone https://github.com/pirateape/ape-guard
 cd apeguard
 cargo build
 
@@ -396,6 +408,8 @@ You may use, copy, modify, and redistribute this software in any project — inc
 | Semgrep CE | LGPL-2.1 | 2 — SAST |
 | Trivy | Apache 2.0 | 3 + 4 — SCA / Container |
 | Nuclei | MIT | 5 — DAST |
+| Checkov | Apache 2.0 | 6 — IaC |
+| Syft | Apache 2.0 | 7 — SBOM |
 
 ---
 

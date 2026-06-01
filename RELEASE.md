@@ -72,6 +72,7 @@ ApeGuard follows [Semantic Versioning](https://semver.org/):
 
 | Version | Date       | Highlights                              |
 |---------|------------|-----------------------------------------|
+| 0.3.1   | 2026-06-01 | Bug fixes (--no-color, Report --reports/--format, MCP binary paths), CODE_OF_CONDUCT, CONTRIBUTING, issue templates |
 | 0.3.0   | 2026-05-31 | Checkov (IaC) + Syft (SBOM) layers, all 7 layers now available, Gitleaks reliability fix, CI mode safety |
 | 0.2.0   | 2026-05-31 | Parallel scanning, HTML charts, severity-weighted ZT scorecard, --ci flag, multi-arch Docker |
 | 0.1.0   | 2026-05-31 | Initial release: 5-layer scanning, MCP, ZT scorecard, HTML reports |

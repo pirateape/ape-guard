@@ -4,6 +4,25 @@ All notable changes to ApeGuard are documented here.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-06-01
+
+### Added
+
+- **Issue templates** — Bug report, feature request, and config.yml for structured community issue management.
+- **Code of Conduct** — Contributor Covenant v2.1 with enforcement contact.
+- **Contributing guide** — Quick-start for new contributors linking to issue templates and CoC.
+
+### Fixed
+
+- **`--no-color` flag now works** — Was parsed by the CLI but never wired to `tracing_subscriber`. Now disables ANSI colour in stderr output when set.
+- **`Report` command respects `--reports` and `--format`** — Was silently generating all report types and only Markdown. Now filters by selected report types and generates JSON/SARIF/HTML output when requested.
+- **MCP server honours configured binary paths** — Gitleaks and Semgrep layers in the MCP runtime were always using `::new()` (hardcoded binary name). Now use `::with_binary()` from config, matching Checkov/Syft pattern.
+- **Safer test assertion** — Replaced bare `unwrap()` with `expect()` in `arch.rs` test for better failure messages.
+
+### Removed
+
+- **AUDIT.md** — Internal audit document. All 30 findings resolved; removed from repo to avoid confusing new contributors with stale statuses.
+
 ## [0.3.0] — 2026-05-31
 
 ### Added

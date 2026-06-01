@@ -740,7 +740,7 @@ mod tests {
     fn test_parse_adr_title() {
         let result = parse_adr_title("# ADR-001: Use PostgreSQL as primary database");
         assert!(result.is_some());
-        let (id, title) = result.unwrap();
+        let (id, title) = result.expect("parse_adr_title should return Some for valid ADR title");
         assert_eq!(id, "ADR-001");
         assert!(title.contains("PostgreSQL"));
     }
