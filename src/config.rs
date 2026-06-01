@@ -36,6 +36,8 @@ pub struct ScannerBinaries {
     pub gitleaks: Option<String>,
     pub semgrep: Option<String>,
     pub trivy: Option<String>,
+    pub checkov: Option<String>,
+    pub syft: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +83,8 @@ impl Default for Config {
                 gitleaks: None,
                 semgrep: None,
                 trivy: None,
+                checkov: None,
+                syft: None,
             },
             cache: CacheConfig {
                 enabled: true,
@@ -185,6 +189,12 @@ fn merge(base: &mut Config, overlay: Config) {
     if overlay.binaries.trivy.is_some() {
         base.binaries.trivy = overlay.binaries.trivy;
     }
+    if overlay.binaries.checkov.is_some() {
+        base.binaries.checkov = overlay.binaries.checkov;
+    }
+    if overlay.binaries.syft.is_some() {
+        base.binaries.syft = overlay.binaries.syft;
+    }
     if overlay.cache.enabled != base.cache.enabled {
         base.cache.enabled = overlay.cache.enabled;
     }
@@ -259,6 +269,8 @@ mod tests {
                 gitleaks: Some("/usr/local/bin/gitleaks".into()),
                 semgrep: None,
                 trivy: None,
+                checkov: None,
+                syft: None,
             },
             ..Config::default()
         };
@@ -348,9 +360,13 @@ cache:
             gitleaks: None,
             semgrep: None,
             trivy: None,
+            checkov: None,
+            syft: None,
         };
         assert!(bins.gitleaks.is_none());
         assert!(bins.semgrep.is_none());
         assert!(bins.trivy.is_none());
+        assert!(bins.checkov.is_none());
+        assert!(bins.syft.is_none());
     }
 }

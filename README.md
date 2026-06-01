@@ -2,6 +2,10 @@
 
 **One-command security posture assessment** — layered scanning, [Unified Zero Trust Framework](https://github.com/pirateape/unified-zero-trust-framework) mapping, multi-audience reports.
 
+[![CI](https://github.com/pirateape/ape-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/pirateape/ape-guard/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/pirateape/ape-guard)](https://github.com/pirateape/ape-guard/releases)
+[![License](https://img.shields.io/badge/License-Elastic_2.0-blue.svg)](LICENSE)
+
 ```bash
 # Single command — full assessment
 apeguard scan
@@ -110,6 +114,12 @@ apeguard cache stats
 # Regenerate reports from cache
 apeguard report
 ```
+
+<p align="center">
+  <img src="assets/apeguard-demo.gif" alt="ApeGuard demo — version check and help" width="90%">
+  <br>
+  <sub>Demo GIF generated with <a href="https://github.com/charmbracelet/vhs">VHS</a>. Regenerate via <code>vhs demo.tape</code>.</sub>
+</p>
 
 ---
 
@@ -392,6 +402,8 @@ You may use, copy, modify, and redistribute this software in any project — inc
 ## Related
 
 - [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — 8-pillar maturity model with quantitative scoring (what this tool implements)
+- [ApeGuard GitHub Action](https://github.com/pirateape/apeguard-action) — Run layered scans in CI/CD pipelines
+- [Azure Security Audit Framework](https://github.com/pirateape/Azure-Security) — 148+ Azure defense-in-depth resources (KQL, PowerShell, Policies, Workbooks)
 - [CISA Zero Trust Maturity Model](https://www.cisa.gov/zero-trust-maturity-model) — Foundational ZT framework from the US Federal government (UZTF builds on this)
 - [MITRE ATT&CK](https://attack.mitre.org/) — Adversarial tactics & techniques
 - [Model Context Protocol](https://modelcontextprotocol.io/) — AI agent integration standard

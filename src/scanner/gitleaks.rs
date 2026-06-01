@@ -57,7 +57,14 @@ impl Scanner for Gitleaks {
     }
 
     async fn scan_raw(&self, path: &Path) -> Result<Vec<u8>, ScannerError> {
-        // Determine if git repo or not
+        // Gitleaks outputs JSON findings to STDERR (not stdout) when exit code is 1 (leaks found).
+        // Using --report-path with a temp file ensures we always capture the JSON output
+        // regardless of exit code.
+        let nonce = uuid::Uuid::new_v4().simple().to_string();
+        let temp_dir = std::env::temp_dir();
+        let report_file = temp_dir.join(format!("apeguard-gitleaks-{}.json", nonce));
+        let report_path = report_file.to_string_lossy().to_string();
+
         let is_git = path.join(".git").exists();
 
         let mut args = vec![
@@ -67,6 +74,8 @@ impl Scanner for Gitleaks {
             "-f".to_string(),
             "json".to_string(),
             "--no-color".to_string(),
+            "--report-path".to_string(),
+            report_path,
         ];
 
         if !is_git {
@@ -74,7 +83,28 @@ impl Scanner for Gitleaks {
         }
 
         let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        crate::scanner::run_command_with_timeout(&self.binary, &arg_refs, 30).await
+        let result = crate::scanner::run_command_with_timeout(&self.binary, &arg_refs, 30).await;
+
+        // Read the temp file regardless of command success/failure
+        let report_content = std::fs::read(&report_file).map_err(ScannerError::Io)?;
+
+        // Clean up temp file
+        let _ = std::fs::remove_file(&report_file);
+
+        // If the report file has findings (non-empty), return them
+        if report_content.len() > 5 {
+            return Ok(report_content);
+        }
+
+        // Fall back to stdout content if temp file is empty
+        if let Ok(stdout) = result {
+            if stdout.len() > 5 {
+                return Ok(stdout);
+            }
+        }
+
+        // No findings found — return empty
+        Ok(Vec::new())
     }
 
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
@@ -92,7 +122,8 @@ impl Scanner for Gitleaks {
             Author: Option<String>,
             Commit: Option<String>,
             Date: Option<String>,
-            Tags: Option<String>,
+            #[serde(default)]
+            Tags: Vec<String>,
             Fingerprint: String,
         }
 
@@ -144,11 +175,7 @@ impl Scanner for Gitleaks {
                 )),
                 fix_effort: Some("15 minutes".to_string()),
                 evidence: Some(format!("Match: {}", f.Match)),
-                tags: f
-                    .Tags
-                    .as_ref()
-                    .map(|t| t.split(',').map(|s| s.trim().to_string()).collect())
-                    .unwrap_or_default(),
+                tags: f.Tags.clone(),
                 zt_pillars: vec!["identity".to_string(), "devices".to_string()],
                 cross_refs: vec![],
             })
@@ -176,7 +203,7 @@ mod tests {
                 "Fingerprint": "abc123:aws-access-key-id:42",
                 "Author": "dev@example.com",
                 "Commit": "a1b2c3d4",
-                "Tags": "aws,credentials"
+                "Tags": ["aws", "credentials"]
             },
             {
                 "Description": "Generic API Key",

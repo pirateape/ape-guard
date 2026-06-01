@@ -15,6 +15,7 @@ fn load_effective_config() -> crate::config::Config {
         log_level: "info".to_string(),
         no_color: false,
         quiet: false,
+        ci: false,
     };
 
     crate::config::load(&args).unwrap_or_else(|_| crate::config::Config::default())
@@ -173,7 +174,7 @@ fn handle_list_tools(id: &Value) -> Value {
                             "layers": {
                                 "type": "array",
                                 "items": { "type": "number" },
-                                "description": "Scanner layers (1=secrets, 2=SAST, 3=SCA fs, 4=container image, 5=DAST)"
+                                "description": "Scanner layers (1=secrets, 2=SAST, 3=SCA fs, 4=container image, 5=DAST, 6=IaC Checkov, 7=SBOM Syft)"
                             },
                             "container": {
                                 "type": "array",
@@ -296,7 +297,7 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
                 .filter_map(|v| v.as_u64().map(|n| n as u8))
                 .collect()
         })
-        .unwrap_or_else(|| vec![1, 2, 3]);
+        .unwrap_or_else(|| vec![1, 2, 3, 6, 7]);
 
     let web_target = args
         .get("web")
@@ -363,8 +364,8 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
 
     // Run scanners
     use crate::scanner::{
-        container::ContainerScanner, dast::DastScanner, gitleaks::Gitleaks, semgrep::Semgrep,
-        trivy::Trivy, Scanner, ScannerResult,
+        checkov::Checkov, container::ContainerScanner, dast::DastScanner, gitleaks::Gitleaks,
+        semgrep::Semgrep, syft::Syft, trivy::Trivy, Scanner, ScannerResult,
     };
     let mut scanners: Vec<Box<dyn Scanner>> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
@@ -399,6 +400,12 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
                 } else {
                     warnings.push("Layer 5 requested but no web target provided. Use arguments.web=\"https://example.com\".".to_string());
                 }
+            }
+            6 => {
+                scanners.push(Box::new(Checkov::with_binary(cfg.binaries.checkov.clone())));
+            }
+            7 => {
+                scanners.push(Box::new(Syft::with_binary(cfg.binaries.syft.clone())));
             }
             _ => {}
         }

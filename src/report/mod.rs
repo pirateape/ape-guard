@@ -209,9 +209,9 @@ target: {{ target }}
 
 | Pillar | Maturity | Gaps | Score |
 |--------|----------|:----:|:----:|
-{% for pillar in zt_scorecard.pillars %}
+{%- for pillar in zt_scorecard.pillars %}
 | {{ pillar.name }} | {{ pillar.maturity }} | {{ pillar.gap_count }} | {{ pillar.score }} |
-{% endfor %}
+{%- endfor %}
 {% endif %}
 
 ## Detailed Findings
@@ -260,9 +260,9 @@ Your **Zero Trust maturity score** is **{{ zt_scorecard.overall_score }} / {{ zt
 
 | Pillar | Maturity | Score |
 |--------|----------|:----:|
-{% for pillar in zt_scorecard.pillars %}
+{%- for pillar in zt_scorecard.pillars %}
 | {{ pillar.name }} | {{ pillar.maturity }} | {{ pillar.score }}/100 |
-{% endfor %}
+{%- endfor %}
 {% endif %}
 
 ## Finding Summary
@@ -637,6 +637,7 @@ pub fn generate_html_report(
     context.insert("zt_scorecard", zt_scorecard);
     context.insert("findings", &enriched_findings);
     context.insert("arch_diagram", &arch_diagram.unwrap_or(""));
+    context.insert("apeguard_version", env!("CARGO_PKG_VERSION"));
 
     let rendered = tera.render("report.html", &context)?;
 
@@ -647,7 +648,7 @@ pub fn generate_html_report(
     Ok(output_path)
 }
 
-const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
+const HTML_TEMPLATE: &str = r##"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -663,7 +664,7 @@ const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
     --success: #3fb950; --card-radius: 8px;
   }
   body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 0; }
-  .container { max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 20px; }
   header { border-bottom: 1px solid var(--border); padding-bottom: 24px; margin-bottom: 32px; }
   header h1 { font-size: 1.8rem; color: var(--accent); margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
   header .shield { width: 32px; height: 32px; background: var(--accent); border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; color: #fff; }
@@ -678,6 +679,10 @@ const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
   .card.medium .value { color: var(--medium); }
   .card.low .value { color: var(--low); }
   .card.info .value { color: var(--info); }
+  .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+  .chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--card-radius); padding: 20px; }
+  .chart-box h3 { color: var(--accent); font-size: 1rem; margin-bottom: 12px; }
+  .chart-box svg { width: 100%; height: auto; }
   h2 { font-size: 1.3rem; margin: 24px 0 16px; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--card-radius); overflow: hidden; }
   th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
@@ -696,12 +701,18 @@ const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
   .pillar-card .pillar-name { font-weight: 600; margin-bottom: 4px; }
   .pillar-card .pillar-score { font-size: 1.5rem; font-weight: 600; color: var(--accent); }
   .pillar-card .pillar-gaps { font-size: 0.8rem; color: var(--text-muted); }
+  .progress-bar { height: 6px; background: #1c2128; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .progress-bar .fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
   .maturity-Baseline { color: var(--critical); }
   .maturity-Advanced { color: var(--high); }
   .maturity-Adaptive { color: var(--success); }
+  .fill-Baseline { background: var(--critical); }
+  .fill-Advanced { background: var(--high); }
+  .fill-Adaptive { background: var(--success); }
   .arch-diagram { background: var(--surface); border: 1px solid var(--border); border-radius: var(--card-radius); padding: 20px; margin-bottom: 24px; overflow-x: auto; }
   .arch-diagram pre { font-family: "SFMono-Regular",Consolas,monospace; font-size: 0.85rem; color: var(--text-muted); white-space: pre-wrap; }
   .pillar-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.7rem; background: rgba(88,166,255,0.1); color: var(--accent); margin: 1px; }
+  @media (max-width: 800px) { .chart-row { grid-template-columns: 1fr; } }
   @media (max-width: 600px) { .cards { grid-template-columns: repeat(2, 1fr); } .scorecard-grid { grid-template-columns: 1fr; } }
   footer { text-align: center; padding: 24px; color: var(--text-muted); font-size: 0.8rem; border-top: 1px solid var(--border); margin-top: 32px; }
 </style>
@@ -719,14 +730,25 @@ const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
   </header>
 
   <div class="cards">
+    <div class="card"><div class="value">{{ total_findings }}</div><div class="label">Total Findings</div></div>
     <div class="card critical"><div class="value">{{ findings_by_severity.critical }}</div><div class="label">Critical</div></div>
     <div class="card high"><div class="value">{{ findings_by_severity.high }}</div><div class="label">High</div></div>
     <div class="card medium"><div class="value">{{ findings_by_severity.medium }}</div><div class="label">Medium</div></div>
     <div class="card low"><div class="value">{{ findings_by_severity.low }}</div><div class="label">Low</div></div>
-    <div class="card info"><div class="value">{{ findings_by_severity.info }}</div><div class="label">Info</div></div>
   </div>
 
   {% if zt_scorecard %}
+  <div class="chart-row">
+    <div class="chart-box">
+      <h3>Zero Trust Pillar Radar</h3>
+      <svg id="radarChart" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div class="chart-box">
+      <h3>Severity Distribution</h3>
+      <svg id="severityChart" viewBox="0 0 400 250" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+
   <h2>Zero Trust Scorecard</h2>
   <div class="meta" style="margin-bottom:12px;">
     <span>Score: <strong>{{ zt_scorecard.overall_score }} / {{ zt_scorecard.max_score }}</strong></span>
@@ -738,6 +760,7 @@ const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
       <div class="pillar-name">{{ pillar.name }}</div>
       <div class="pillar-score maturity-{{ pillar.maturity }}">{{ pillar.score }}/100</div>
       <div class="pillar-gaps">Maturity: <span class="maturity-{{ pillar.maturity }}">{{ pillar.maturity }}</span> &middot; {{ pillar.gap_count }} gaps</div>
+      <div class="progress-bar"><div class="fill fill-{{ pillar.maturity }}" style="width:{{ pillar.score }}%"></div></div>
     </div>
     {% endfor %}
   </div>
@@ -771,10 +794,97 @@ const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
     </tbody>
   </table>
 
-  <footer>Generated by ApeGuard v{{ scanners_used | first | default(value="") }} &mdash; {{ timestamp }}</footer>
+  <footer>Generated by ApeGuard v{{ apeguard_version }} &mdash; {{ timestamp }}</footer>
 </div>
+
+<script>
+{% if zt_scorecard %}
+(function() {
+  // Radar Chart
+  const pillars = [
+    {% for p in zt_scorecard.pillars %}
+      { name: "{{ p.name }}", score: {{ p.score }}, maturity: "{{ p.maturity }}" },
+    {% endfor %}
+  ];
+  const radar = document.getElementById('radarChart');
+  if (radar && pillars.length > 0) {
+    const cx = 200, cy = 200, r = 150, levels = 4, n = pillars.length;
+    let html = '';
+    // Grid rings
+    for (let lv = 1; lv <= levels; lv++) {
+      const lr = (r / levels) * lv;
+      html += '<polygon points="';
+      for (let i = 0; i < n; i++) {
+        const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
+        html += (cx + lr * Math.cos(angle)) + ',' + (cy + lr * Math.sin(angle)) + ' ';
+      }
+      html += '" fill="none" stroke="#30363d" stroke-width="1" />';
+    }
+    // Axes
+    for (let i = 0; i < n; i++) {
+      const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
+      html += '<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + r * Math.cos(angle)) + '" y2="' + (cy + r * Math.sin(angle)) + '" stroke="#30363d" stroke-width="1" />';
+    }
+    // Data polygon
+    const scores = pillars.map(p => p.score / 100);
+    html += '<polygon points="';
+    for (let i = 0; i < n; i++) {
+      const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
+      const pr = r * scores[i];
+      html += (cx + pr * Math.cos(angle)) + ',' + (cy + pr * Math.sin(angle)) + ' ';
+    }
+    html += '" fill="rgba(88,166,255,0.2)" stroke="#58a6ff" stroke-width="2" />';
+    // Data points
+    for (let i = 0; i < n; i++) {
+      const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
+      const pr = r * scores[i];
+      html += '<circle cx="' + (cx + pr * Math.cos(angle)) + '" cy="' + (cy + pr * Math.sin(angle)) + '" r="4" fill="#58a6ff" />';
+    }
+    // Labels
+    for (let i = 0; i < n; i++) {
+      const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
+      const lr = r + 22;
+      const lx = cx + lr * Math.cos(angle);
+      const ly = cy + lr * Math.sin(angle);
+      const anchor = angle > -0.1 && angle < Math.PI - 0.1 ? 'start' : (angle > Math.PI - 0.1 || angle < -Math.PI + 0.1 ? 'end' : 'middle');
+      html += '<text x="' + lx + '" y="' + ly + '" fill="#8b949e" font-size="10" text-anchor="' + anchor + '" dominant-baseline="middle">' + pillars[i].name + '</text>';
+    }
+    radar.innerHTML = html;
+  }
+
+  // Severity Bar Chart
+  const sev = {
+    critical: {{ findings_by_severity.critical }},
+    high: {{ findings_by_severity.high }},
+    medium: {{ findings_by_severity.medium }},
+    low: {{ findings_by_severity.low }},
+    info: {{ findings_by_severity.info }}
+  };
+  const chart = document.getElementById('severityChart');
+  if (chart) {
+    const colors = { critical: '#f85149', high: '#d29922', medium: '#a371f7', low: '#58a6ff', info: '#8b949e' };
+    const labels = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' };
+    const maxVal = Math.max(sev.critical, sev.high, sev.medium, sev.low, sev.info, 1);
+    const barW = 50, gap = 20, startX = 40, topY = 30, chartH = 180;
+    let html = '';
+    const keys = ['critical','high','medium','low','info'];
+    keys.forEach((k, i) => {
+      const x = startX + i * (barW + gap);
+      const barH = (sev[k] / maxVal) * (chartH - 20);
+      const y = topY + chartH - barH - 20;
+      html += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + barH + '" fill="' + colors[k] + '" rx="4" />';
+      html += '<text x="' + (x + barW/2) + '" y="' + (y - 6) + '" fill="' + colors[k] + '" font-size="14" font-weight="bold" text-anchor="middle">' + sev[k] + '</text>';
+      html += '<text x="' + (x + barW/2) + '" y="' + (topY + chartH) + '" fill="#8b949e" font-size="10" text-anchor="middle">' + labels[k] + '</text>';
+    });
+    // baseline
+    html += '<line x1="30" y1="' + (topY + chartH - 20) + '" x2="400" y2="' + (topY + chartH - 20) + '" stroke="#30363d" stroke-width="1" />';
+    chart.innerHTML = html;
+  }
+})();
+{% endif %}
+</script>
 </body>
-</html>"#;
+</html>"##;
 
 #[cfg(test)]
 mod tests {
@@ -1150,6 +1260,10 @@ mod tests {
         assert!(content.contains("test-scan"));
         assert!(content.contains("Hardcoded Secret"));
         assert!(content.contains("SQL Injection"));
+        assert!(content.contains(&format!(
+            "Generated by ApeGuard v{}",
+            env!("CARGO_PKG_VERSION")
+        )));
     }
 
     #[test]
