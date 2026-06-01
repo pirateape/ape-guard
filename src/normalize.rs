@@ -170,46 +170,47 @@ pub fn compute_zt_scorecard(findings: &[CanonicalFinding]) -> ZeroTrustScorecard
         "analytics",
     ];
 
-    let mut pillar_findings: HashMap<&str, u32> = HashMap::new();
-    let mut pillar_severity: HashMap<&str, u32> = HashMap::new();
+    // Track findings per pillar with severity-weighted scoring
+    let mut pillar_severity_score: HashMap<&str, u32> = HashMap::new();
     let mut pillar_finding_refs: HashMap<&str, Vec<&CanonicalFinding>> = HashMap::new();
 
     for finding in findings {
         for pillar in &finding.zt_pillars {
-            *pillar_findings.entry(pillar).or_insert(0) += 1;
-            let sev_weight = match finding.severity {
+            // Severity weight: Critical=10, High=5, Medium=3, Low=1, Info=0
+            let weight = match finding.severity {
                 crate::find::Severity::Critical => 10,
                 crate::find::Severity::High => 5,
-                crate::find::Severity::Medium => 2,
+                crate::find::Severity::Medium => 3,
                 crate::find::Severity::Low => 1,
                 crate::find::Severity::Info => 0,
             };
-            *pillar_severity.entry(pillar).or_insert(0) += sev_weight;
+            *pillar_severity_score.entry(pillar).or_insert(0) += weight;
             pillar_finding_refs.entry(pillar).or_default().push(finding);
         }
     }
 
-    let _max_gap_score = 40u32; // 8 pillars × max 5 gaps per pillar
     let mut total_gaps = 0u32;
 
     let pillar_scores: Vec<PillarScore> = all_pillars
         .iter()
         .map(|name| {
-            let count = pillar_findings.get(name).copied().unwrap_or(0);
-            let severity_weight = pillar_severity.get(name).copied().unwrap_or(0);
-            let gap_count = count.min(5); // Cap at 5 gaps per pillar
+            let severity_weight = pillar_severity_score.get(name).copied().unwrap_or(0);
+
+            // Severity-weighted gap count: cap at 10 to keep scoring reasonable
+            let gap_count = severity_weight.min(10);
             total_gaps += gap_count;
 
-            // Maturity: fewer findings = higher maturity
-            let maturity = if count == 0 {
+            // Maturity determined by severity-weighted score
+            let maturity = if severity_weight == 0 {
                 MaturityTier::Adaptive
-            } else if count <= 2 && severity_weight < 5 {
+            } else if severity_weight <= 3 {
                 MaturityTier::Advanced
             } else {
                 MaturityTier::Baseline
             };
 
-            let score = (5u32.saturating_sub(gap_count)) * 20; // 0-100 per pillar
+            // Score: 100 - (gap_count * 10), minimum 0
+            let score = 100u32.saturating_sub(gap_count * 10);
 
             PillarScore {
                 name: name.to_string(),
@@ -228,7 +229,8 @@ pub fn compute_zt_scorecard(findings: &[CanonicalFinding]) -> ZeroTrustScorecard
         .count() as u32;
 
     // Compute gap analysis
-    let gap_analysis = compute_gap_analysis(&all_pillars, &pillar_findings, &pillar_finding_refs);
+    let gap_analysis =
+        compute_gap_analysis(&all_pillars, &pillar_severity_score, &pillar_finding_refs);
 
     ZeroTrustScorecard {
         overall_score,
@@ -240,22 +242,22 @@ pub fn compute_zt_scorecard(findings: &[CanonicalFinding]) -> ZeroTrustScorecard
     }
 }
 
-/// Compute detailed gap analysis for each pillar.
+/// Compute detailed gap analysis for each pillar (severity-weighted).
 pub fn compute_gap_analysis(
     all_pillars: &[&str],
-    pillar_findings: &std::collections::HashMap<&str, u32>,
+    pillar_severity: &std::collections::HashMap<&str, u32>,
     pillar_finding_refs: &std::collections::HashMap<&str, Vec<&CanonicalFinding>>,
 ) -> Vec<GapAnalysis> {
     let target = MaturityTier::Advanced;
     let mut analysis = Vec::new();
 
     for pillar_name in all_pillars {
-        let count = pillar_findings.get(*pillar_name).copied().unwrap_or(0);
+        let severity_weight = pillar_severity.get(*pillar_name).copied().unwrap_or(0);
 
-        // Determine current maturity
-        let current = if count == 0 {
+        // Determine current maturity based on severity weight
+        let current = if severity_weight == 0 {
             MaturityTier::Adaptive
-        } else if count <= 2 {
+        } else if severity_weight <= 3 {
             MaturityTier::Advanced
         } else {
             MaturityTier::Baseline
@@ -267,9 +269,9 @@ pub fn compute_gap_analysis(
             (MaturityTier::Adaptive, _) => GapLevel::None, // Already exceeded
             (MaturityTier::Advanced, MaturityTier::Advanced) => GapLevel::None,
             (MaturityTier::Baseline, MaturityTier::Advanced) => {
-                if count > 5 {
+                if severity_weight > 10 {
                     GapLevel::Large
-                } else if count > 2 {
+                } else if severity_weight > 5 {
                     GapLevel::Medium
                 } else {
                     GapLevel::Small
@@ -278,28 +280,28 @@ pub fn compute_gap_analysis(
             _ => GapLevel::Small,
         };
 
-        // Generate recommendations
-        let mut recommendations =
-            generate_pillar_recommendations(pillar_name, current.clone(), count);
+        // Build recommendations from findings
+        let recommendations: Vec<String> = pillar_finding_refs
+            .get(*pillar_name)
+            .map(|refs| {
+                refs.iter()
+                    .take(3)
+                    .map(|f| format!("{}: {}", f.rule_id, f.title))
+                    .collect()
+            })
+            .unwrap_or_default();
 
-        // Enrich recommendations with specific finding IDs from pillar_finding_refs
-        if let Some(refs) = pillar_finding_refs.get(*pillar_name) {
-            if !refs.is_empty() {
-                let ids: Vec<&str> = refs.iter().map(|f| f.id.as_str()).take(5).collect();
-                recommendations.push(format!(
-                    "Blocking findings ({}): {}",
-                    refs.len(),
-                    ids.join(", ")
-                ));
-            }
-        }
+        let blocking_count = pillar_finding_refs
+            .get(*pillar_name)
+            .map(|refs| refs.len() as u32)
+            .unwrap_or(0);
 
         analysis.push(GapAnalysis {
             pillar: pillar_name.to_string(),
             current_maturity: current,
             target_maturity: target.clone(),
             gap,
-            blocking_findings: count,
+            blocking_findings: blocking_count,
             recommendations,
         });
     }
@@ -562,7 +564,7 @@ mod tests {
         let sc = compute_zt_scorecard(&findings);
         let identity = sc.pillars.iter().find(|p| p.name == "identity").unwrap();
         assert!(identity.score < 100); // Should lose points
-        assert_eq!(identity.gap_count, 1);
+        assert_eq!(identity.gap_count, 5); // High severity weight=5
     }
 
     #[test]
@@ -573,13 +575,13 @@ mod tests {
             make_finding("3", "secret", "Secret 3"),
             make_finding("4", "secret", "Secret 4"),
             make_finding("5", "secret", "Secret 5"),
-            make_finding("6", "secret", "Secret 6"), // 6th capped
+            make_finding("6", "secret", "Secret 6"), // 6th adds more weight
         ];
         normalize_findings(&mut findings); // Sets zt_pillars for all
         let sc = compute_zt_scorecard(&findings);
         let identity = sc.pillars.iter().find(|p| p.name == "identity").unwrap();
-        assert_eq!(identity.gap_count, 5); // Capped at 5
-        assert_eq!(identity.score, 0); // 5 gaps = 0 score
+        assert_eq!(identity.gap_count, 10); // 6 High × 5 = 30, capped at 10
+        assert_eq!(identity.score, 0); // 10 gaps * 10 = 100 deduction → 0
     }
 
     #[test]

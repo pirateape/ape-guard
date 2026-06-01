@@ -116,8 +116,10 @@ pub enum ScannerError {
     Io(#[from] std::io::Error),
 }
 
+pub mod checkov;
 pub mod container;
 pub mod dast;
 pub mod gitleaks;
 pub mod semgrep;
+pub mod syft;
 pub mod trivy;

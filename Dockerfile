@@ -27,22 +27,46 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     jq \
+    python3 \
+    python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Gitleaks (Layer 1)
-RUN curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz \
+ARG TARGETARCH
+RUN ARCH=${TARGETARCH:-amd64} && \
+    case "$ARCH" in \
+      amd64) GL_ARCH="x64" ;; \
+      arm64) GL_ARCH="arm64" ;; \
+      *) echo "Unsupported arch: $ARCH"; exit 1 ;; \
+    esac && \
+    curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_${GL_ARCH}.tar.gz" \
     | tar xz -C /usr/local/bin gitleaks
 
-# Install Trivy (Layer 3 + 4)
-RUN curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-    | sh -s -- -b /usr/local/bin v0.50.1
+# Install Trivy (Layer 3 + 4) — latest stable
+ARG TARGETARCH
+RUN ARCH=${TARGETARCH:-amd64} && \
+    case "$ARCH" in \
+      amd64) TV_ARCH="64bit" ;; \
+      arm64) TV_ARCH="ARM64" ;; \
+      *) echo "Unsupported arch: $ARCH"; exit 1 ;; \
+    esac && \
+    curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v0.70.0/trivy_0.70.0_Linux-${TV_ARCH}.tar.gz" \
+    | tar xz -C /usr/local/bin trivy
 
-# Install Semgrep (Layer 2)
-RUN pip3 install --no-cache-dir semgrep
+# Install Semgrep (Layer 2) — use virtualenv to avoid PEP 668 conflicts
+RUN python3 -m venv /opt/semgrep && \
+    /opt/semgrep/bin/pip install --no-cache-dir semgrep && \
+    ln -sf /opt/semgrep/bin/semgrep /usr/local/bin/semgrep
 
-# Install Nuclei (Layer 5 — optional)
-RUN curl -sSfL https://github.com/projectdiscovery/nuclei/releases/download/v3.2.9/nuclei_3.2.9_linux_amd64.tar.gz \
-    | tar xz -C /usr/local/bin nuclei
+# Install Nuclei (Layer 5)
+ARG TARGETARCH
+RUN ARCH=${TARGETARCH:-amd64} && \
+    apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/* && \
+    curl -sSfL "https://github.com/projectdiscovery/nuclei/releases/download/v3.8.0/nuclei_3.8.0_linux_${ARCH}.zip" \
+    -o /tmp/nuclei.zip && \
+    unzip -o /tmp/nuclei.zip nuclei -d /usr/local/bin/ && \
+    rm /tmp/nuclei.zip
 
 COPY --from=builder /app/target/release/apeguard /usr/local/bin/apeguard
 

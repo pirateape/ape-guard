@@ -26,6 +26,12 @@ pub struct Args {
     /// Suppress all output except results
     #[arg(short, long, global = true)]
     pub quiet: bool,
+
+    /// CI mode: exit code reflects scan results. Equivalent to `--fail-on high`.
+    /// Upgrades `--fail-on never` (the default) to `high`; explicit
+    /// `--fail-on high` or `--fail-on critical` values are preserved.
+    #[arg(long, global = true)]
+    pub ci: bool,
 }
 
 #[derive(Subcommand, Clone)]
@@ -35,7 +41,7 @@ pub enum Command {
         /// Target directory or repository
         path: Option<String>,
 
-        /// Scanner layers to run (1=secrets, 2=SAST, 3=SCA, 4=container, 5=DAST)
+        /// Scanner layers to run (1=secrets, 2=SAST, 3=SCA, 4=container, 5=DAST, 6=IaC Checkov, 7=SBOM Syft)
         #[arg(long, value_delimiter = ',', default_value = "1,2,3,4")]
         layers: Vec<u8>,
 
