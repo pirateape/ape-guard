@@ -24,7 +24,7 @@ async-trait = "0.1"
 reqwest = { version = "0.13", features = ["json"] }
 
 # Utilities
-which = "6.0"
+which = "8.0"
 regex = "1"
 
 # Cache
