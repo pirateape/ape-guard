@@ -21,11 +21,11 @@ pub async fn run_command_with_timeout(
     let timeout_dur = Duration::from_secs(timeout_secs);
     match tokio::time::timeout(timeout_dur, cmd).await {
         Ok(Ok(output)) => {
-            if output.status.success() || output.stdout.len() > 10 {
+            if output.status.success() {
                 Ok(output.stdout)
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(ScannerError::ExecutionFailed(stderr.to_string()))
+                Err(ScannerError::ExecutionFailed(stderr.trim().to_string()))
             }
         }
         Ok(Err(e)) => Err(ScannerError::Io(e)),

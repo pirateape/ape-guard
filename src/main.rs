@@ -25,13 +25,14 @@ async fn main() -> anyhow::Result<()> {
     // Parse CLI args first so --log-level is available for tracing init
     let args = cli::parse();
 
-    // Initialize tracing — honour --log-level flag (fallback to RUST_LOG env var)
+    // Initialize tracing — honour --log-level and --no-color flags
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&args.log_level)),
         )
         .with_writer(std::io::stderr) // keep tracing on stderr so stdout stays clean
+        .with_ansi(!args.no_color)
         .init();
 
     // Load config (merge defaults + file + env + flags)
@@ -78,10 +79,20 @@ async fn main() -> anyhow::Result<()> {
             path,
             snapshot,
             output_dir,
-            ..
+            format,
+            reports,
         } => {
             let target = path.clone().unwrap_or_else(|| ".".to_string());
-            run_report(&target, snapshot.as_deref(), output_dir, &cfg, args.quiet).await?;
+            run_report(
+                &target,
+                snapshot.as_deref(),
+                output_dir,
+                &cfg,
+                args.quiet,
+                reports,
+                format,
+            )
+            .await?;
         }
         cli::Command::Compare { a, b, format } => {
             run_compare(a, b, format, &cfg, args.quiet).await?;
@@ -534,6 +545,8 @@ async fn run_report(
     output_dir: &str,
     cfg: &config::Config,
     quiet: bool,
+    selected_reports: &[cli::ReportType],
+    formats: &[cli::OutputFormat],
 ) -> anyhow::Result<()> {
     tracing::info!("Report regeneration from cache: snapshot={:?}", snapshot);
 
@@ -642,15 +655,59 @@ async fn run_report(
         None
     };
 
-    // Generate reports (all types — report regen always generates everything)
-    let report_paths = report::generate_all_reports(
+    // Convert CLI report-type flags to report module enum
+    let selected_report_types: Vec<report::ReportType> = selected_reports
+        .iter()
+        .map(|r| match r {
+            cli::ReportType::Tech => report::ReportType::Technical,
+            cli::ReportType::Exec => report::ReportType::Executive,
+            cli::ReportType::Roadmap => report::ReportType::Roadmap,
+        })
+        .collect();
+
+    // Generate reports
+    let mut report_paths = report::generate_all_reports(
         &summary,
         &findings,
         &zt_scorecard,
         &output_path,
         arch_diagram.as_deref(),
-        &[],
+        &selected_report_types,
     )?;
+
+    // Generate additional output formats
+    for fmt in formats {
+        let path = match fmt {
+            cli::OutputFormat::Md => continue, // Already generated
+            cli::OutputFormat::Json => report::generate_json_report(
+                &summary,
+                &findings,
+                &zt_scorecard,
+                &output_path,
+                arch_diagram.as_deref(),
+            )?,
+            cli::OutputFormat::Sarif => report::generate_sarif_report(
+                &summary,
+                &findings,
+                &zt_scorecard,
+                &output_path,
+                arch_diagram.as_deref(),
+            )?,
+            cli::OutputFormat::Html => report::generate_html_report(
+                &summary,
+                &findings,
+                &zt_scorecard,
+                &output_path,
+                arch_diagram.as_deref(),
+            )?,
+            cli::OutputFormat::Pdf => {
+                // PDF not yet implemented, skip
+                tracing::warn!("PDF output format not yet implemented");
+                continue;
+            }
+        };
+        report_paths.push(path);
+    }
 
     quiet_println!(quiet, "");
     quiet_println!(quiet, "═══ ApeGuard Report Regeneration ═══");

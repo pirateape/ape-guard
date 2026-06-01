@@ -372,8 +372,10 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
 
     for layer in &layers {
         match layer {
-            1 => scanners.push(Box::new(Gitleaks::new())),
-            2 => scanners.push(Box::new(Semgrep::new())),
+            1 => scanners.push(Box::new(Gitleaks::with_binary(
+                cfg.binaries.gitleaks.clone(),
+            ))),
+            2 => scanners.push(Box::new(Semgrep::with_binary(cfg.binaries.semgrep.clone()))),
             3 => {
                 scanners.push(Box::new(Trivy::with_mode(
                     crate::scanner::trivy::TrivyMode::Vuln,

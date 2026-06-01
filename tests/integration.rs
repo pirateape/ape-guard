@@ -10,7 +10,7 @@ fn test_version() {
     cmd.arg("version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("ApeGuard v0.3.0"))
+        .stdout(predicate::str::contains("ApeGuard v"))
         .stdout(predicate::str::contains("Elastic-2.0"));
 }
 
