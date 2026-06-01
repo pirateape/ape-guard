@@ -16,7 +16,7 @@ it responsibly.
 
 **Do not** open a public GitHub issue for security vulnerabilities.
 
-Instead, email the maintainer at **pirateape@proton.me** or open a
+Instead, email the maintainer at **pirateape@icloud.com** or open a
 [confidential advisory](https://github.com/pirateape/ape-guard/security/advisories/new).
 
 You should receive a response within 48 hours. If you don't, please follow up.
