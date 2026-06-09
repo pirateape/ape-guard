@@ -933,6 +933,8 @@ mod tests {
                 tags: vec!["env".to_string()],
                 zt_pillars: vec!["Identity".to_string()],
                 cross_refs: vec![],
+                grade: None,
+                risk_score: None,
             },
             CanonicalFinding {
                 id: "F-2".to_string(),
@@ -959,6 +961,8 @@ mod tests {
                 tags: vec![],
                 zt_pillars: vec![],
                 cross_refs: vec![],
+                grade: None,
+                risk_score: None,
             },
         ];
 

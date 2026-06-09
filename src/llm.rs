@@ -94,7 +94,11 @@ fn build_remediation_prompt(finding: &CanonicalFinding) -> String {
     )
 }
 
-async fn call_ollama(endpoint: &str, model: &str, prompt: &str) -> anyhow::Result<String> {
+pub(crate) async fn call_ollama(
+    endpoint: &str,
+    model: &str,
+    prompt: &str,
+) -> anyhow::Result<String> {
     #[derive(serde::Serialize)]
     struct OllamaRequest<'a> {
         model: &'a str,
@@ -166,6 +170,8 @@ mod tests {
             tags: vec![],
             zt_pillars: vec![],
             cross_refs: vec![],
+            grade: None,
+            risk_score: None,
         }];
         let cfg = LlmConfig {
             enabled: false,
@@ -203,6 +209,8 @@ mod tests {
             tags: vec![],
             zt_pillars: vec![],
             cross_refs: vec![],
+            grade: None,
+            risk_score: None,
         };
         let prompt = build_remediation_prompt(&finding);
         assert!(prompt.contains("rule-1"));

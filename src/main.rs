@@ -10,14 +10,55 @@ mod cli;
 mod config;
 pub(crate) mod dedup;
 pub(crate) mod find;
+pub(crate) mod grade;
 pub(crate) mod mcp;
 pub(crate) mod normalize;
 pub(crate) mod report;
 pub(crate) mod scanner;
+pub(crate) mod score;
 
 pub(crate) mod llm;
 
 use sha2::Digest;
+use std::io::Write;
+
+/// Spawn a background task that cleans up child scanner processes on SIGINT/SIGTERM.
+/// Uses `pkill -P` on Unix to kill all child processes before exiting.
+fn install_signal_handler() {
+    tokio::spawn(async {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut term =
+                signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {},
+                _ = term.recv() => {},
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            tokio::signal::ctrl_c().await.ok();
+        }
+
+        cleanup_child_processes();
+        std::process::exit(130);
+    });
+}
+
+/// Kill child scanner processes by parent PID using `pkill -P`.
+#[cfg(unix)]
+fn cleanup_child_processes() {
+    let ppid = std::process::id();
+    let _ = std::process::Command::new("pkill")
+        .args(["-P", &ppid.to_string()])
+        .output();
+}
+
+#[cfg(not(unix))]
+fn cleanup_child_processes() {
+    // On non-Unix (Windows), tokio drops Command handles which kills children
+}
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -35,6 +76,9 @@ async fn main() -> anyhow::Result<()> {
         .with_ansi(!args.no_color)
         .init();
 
+    // Install signal handler for graceful child process cleanup on Ctrl+C / SIGTERM
+    install_signal_handler();
+
     // Load config (merge defaults + file + env + flags)
     let cfg = config::load(&args)?;
 
@@ -50,6 +94,8 @@ async fn main() -> anyhow::Result<()> {
             container,
             fail_on,
             reports,
+            resume,
+            grade,
             ..
         } => {
             let target = path.clone().unwrap_or_else(|| ".".to_string());
@@ -72,6 +118,8 @@ async fn main() -> anyhow::Result<()> {
                 web_target: web.clone(),
                 containers: container.clone(),
                 report_types: reports.clone(),
+                resume: *resume,
+                grade: *grade,
             };
             run_scan(scan_args, &cfg).await?;
         }
@@ -167,6 +215,8 @@ struct ScanArgs<'a> {
     no_cache: bool,
     quiet: bool,
     ci: bool,
+    resume: bool,
+    grade: bool,
     formats: Vec<cli::OutputFormat>,
     web_target: Option<String>,
     containers: Vec<String>,
@@ -192,6 +242,8 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
     let no_cache = args.no_cache;
     let quiet = args.quiet;
     let ci = args.ci;
+    let resume = args.resume;
+    let grade = args.grade;
     let formats = args.formats;
     let web_target = args.web_target;
     let containers = args.containers;
@@ -207,6 +259,10 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
     let scan_id = uuid::Uuid::new_v4().to_string();
     let target_path = PathBuf::from(target);
     let output_path = PathBuf::from(output_dir);
+    std::fs::create_dir_all(&output_path).ok();
+
+    // Path for per-scanner streaming results (used for resume and crash recovery)
+    let findings_jsonl_path = output_path.join("found_findings.jsonl");
 
     tracing::info!("Starting scan: {}", target);
 
@@ -280,6 +336,34 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
         }
     }
 
+    // Resume: check for existing findings JSONL and skip completed scanners
+    if resume {
+        match load_completed_scanners(&findings_jsonl_path) {
+            Ok(completed) if !completed.is_empty() => {
+                tracing::info!(
+                    "Resume mode: {} scanners already completed: {:?}",
+                    completed.len(),
+                    completed
+                );
+                scanners.retain(|s| !completed.contains(s.name()));
+                if scanners.is_empty() {
+                    tracing::info!("All requested layers already completed — regenerating report from existing data.");
+                }
+            }
+            Ok(_) => {
+                tracing::info!(
+                    "Resume mode: no previous scanner results found, running all layers."
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Resume mode: could not read previous results ({}), running all layers.",
+                    e
+                );
+            }
+        }
+    }
+
     // Run each scanner in parallel
     let mut all_findings: Vec<find::CanonicalFinding> = Vec::new();
     let mut scanners_used: Vec<String> = Vec::new();
@@ -297,9 +381,42 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
 
     for (name, result) in scan_results {
         scanners_used.push(name.clone());
-        match result {
+        let (status, finding_count) = match &result {
             Ok(ScannerResult::Complete { findings, .. }) => {
                 tracing::info!("  {}: {} findings", name, findings.len());
+                ("complete", findings.len())
+            }
+            Ok(ScannerResult::NotInstalled { .. }) => {
+                tracing::warn!("  {}: not installed", name);
+                ("skipped", 0)
+            }
+            Ok(ScannerResult::Error { error, .. }) => {
+                tracing::error!("  {}: error - {}", name, error);
+                ("error", 0)
+            }
+            Err(e) => {
+                tracing::error!("  {}: failed - {}", name, e);
+                ("error", 0)
+            }
+        };
+
+        // Stream result to found_findings.jsonl immediately
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&findings_jsonl_path)
+        {
+            let entry = serde_json::json!({
+                "scanner": name,
+                "status": status,
+                "finding_count": finding_count,
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            });
+            let _ = writeln!(file, "{}", entry);
+        }
+
+        match result {
+            Ok(ScannerResult::Complete { findings, .. }) => {
                 all_findings.extend(findings);
             }
             Ok(ScannerResult::NotInstalled { name, hint }) => {
@@ -331,14 +448,38 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
         Err(e) => tracing::debug!("LLM enhancement skipped: {}", e),
     }
 
+    // Adversarial grading — optional LLM verification step
+    // Reuses the same Ollama endpoint as remediation but with an adversarial "prove FP" frame
+    if grade {
+        let grade_count =
+            grade::grade_findings(&mut final_findings, &cfg.llm.endpoint, &cfg.llm.model).await?;
+        if grade_count > 0 {
+            let counts = grade::count_verdicts(&final_findings);
+            tracing::info!(
+                "Graded {} findings via adversarial verification ({} confirmed, {} rejected, {} needs review)",
+                grade_count,
+                counts.confirmed,
+                counts.rejected,
+                counts.needs_review,
+            );
+        }
+    }
+
     // Apply severity filter
-    let final_findings = filter_by_severity(final_findings, severity_filter);
+    let mut final_findings = filter_by_severity(final_findings, severity_filter);
 
     // Check fail-on threshold for CI exit codes
     let fail_threshold_reached = check_fail_on(&final_findings, fail_on);
 
     // Build attack chains
     let attack_chains = chain::build_attack_chains(&final_findings);
+
+    // Compute risk scores for all findings (deterministic, always runs)
+    score::score_all_findings(
+        &mut final_findings,
+        &attack_chains,
+        &score::ScoreWeights::default(),
+    );
 
     // Compute Zero Trust scorecard
     let zt_scorecard = normalize::compute_zt_scorecard(&final_findings);
@@ -536,6 +677,34 @@ fn check_fail_on(findings: &[find::CanonicalFinding], threshold: &cli::FailOnThr
             .iter()
             .any(|f| matches!(f.severity, find::Severity::Critical)),
     }
+}
+
+/// Read found_findings.jsonl and return the set of scanner names that completed successfully.
+fn load_completed_scanners(
+    path: &std::path::Path,
+) -> anyhow::Result<std::collections::HashSet<String>> {
+    if !path.exists() {
+        return Ok(std::collections::HashSet::new());
+    }
+
+    let content = std::fs::read_to_string(path)?;
+    let mut completed = std::collections::HashSet::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) {
+            if entry["status"] == "complete" {
+                if let Some(scanner) = entry["scanner"].as_str() {
+                    completed.insert(scanner.to_string());
+                }
+            }
+        }
+    }
+
+    Ok(completed)
 }
 
 /// Regenerate reports from cached scan

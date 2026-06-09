@@ -73,6 +73,14 @@ pub enum Command {
         #[arg(long, default_value = "never")]
         fail_on: FailOnThreshold,
 
+        /// Resume a previous scan, skipping completed layers
+        #[arg(long)]
+        resume: bool,
+
+        /// Enable AI grading of findings via adversarial verification (requires Ollama)
+        #[arg(long)]
+        grade: bool,
+
         /// Output directory
         #[arg(long, default_value = ".apeguard/reports")]
         output_dir: String,

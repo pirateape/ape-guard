@@ -175,6 +175,8 @@ impl Scanner for Checkov {
                     ],
                     zt_pillars: vec![],
                     cross_refs: vec![],
+                    grade: None,
+                    risk_score: None,
                 }
             })
             .collect();

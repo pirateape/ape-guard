@@ -24,7 +24,11 @@ Cargo.lock
 # MemPalace (AI memory)
 .mempalace/
 mempalace.json
+mempalace.yaml
 *.mempalace.md
+
+# Graphify entities
+entities.json
 
 # IDE
 .idea/

@@ -139,6 +139,8 @@ impl Scanner for Syft {
                     tags: vec!["sbom".to_string(), "dependency".to_string(), a.kind.clone()],
                     zt_pillars: vec![],
                     cross_refs: vec![],
+                    grade: None,
+                    risk_score: None,
                 }
             })
             .collect();

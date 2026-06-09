@@ -339,6 +339,8 @@ mod tests {
             tags: vec![],
             zt_pillars: vec![],
             cross_refs,
+            grade: None,
+            risk_score: None,
         }
     }
 

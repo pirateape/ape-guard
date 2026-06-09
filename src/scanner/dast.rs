@@ -229,6 +229,8 @@ impl DastScanner {
                 tags: vec!["dast".to_string(), result.template_id],
                 zt_pillars: vec![],
                 cross_refs: vec![],
+                grade: None,
+                risk_score: None,
             });
         }
 
