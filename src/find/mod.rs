@@ -27,6 +27,8 @@ pub struct CanonicalFinding {
     pub tags: Vec<String>,
     pub zt_pillars: Vec<String>,
     pub cross_refs: Vec<CrossReference>,
+    pub grade: Option<GradeVerdict>,
+    pub risk_score: Option<UnifiedRiskScore>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +47,55 @@ pub struct CrossReference {
     pub rule_id: String,
 }
 
+/// Why a finding was rejected by the adversarial grader
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum RejectReason {
+    TestCode,
+    Unreachable,
+    FalsePositive,
+    AlreadyMitigated,
+    SeverityInflated,
+}
+
+/// Verdict from the adversarial verification grader
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GradeVerdict {
+    Confirmed {
+        confidence: f32,
+        reasoning: String,
+    },
+    Rejected {
+        reasoning: String,
+        reason_category: RejectReason,
+    },
+    NeedsReview {
+        reasoning: String,
+        open_questions: Vec<String>,
+    },
+}
+
+/// Per-dimension risk scores for a single finding
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RiskDimensions {
+    pub severity: f32,
+    pub confidence: f32,
+    pub context: f32,
+    pub chain: f32,
+    pub zt_pillars: f32,
+    pub grade: f32,
+}
+
+/// Unified risk score for a single finding
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnifiedRiskScore {
+    /// Overall risk score (0.0 = no risk, 1.0 = maximum risk)
+    pub overall: f32,
+    /// Per-dimension breakdown
+    pub dimensions: RiskDimensions,
+    /// Confidence in this score (0.0-1.0)
+    pub score_confidence: f32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ScannerType {
     Gitleaks,
@@ -57,6 +108,7 @@ pub enum ScannerType {
     Syft,
     Nuclei,
     Zap,
+    Architecture,
     Custom(String),
 }
 
@@ -73,6 +125,7 @@ impl std::fmt::Display for ScannerType {
             ScannerType::Syft => write!(f, "Syft"),
             ScannerType::Nuclei => write!(f, "Nuclei"),
             ScannerType::Zap => write!(f, "ZAP"),
+            ScannerType::Architecture => write!(f, "Architecture"),
             ScannerType::Custom(name) => write!(f, "{}", name),
         }
     }
@@ -209,6 +262,8 @@ mod tests {
             tags: vec![],
             zt_pillars: vec![],
             cross_refs: vec![],
+            grade: None,
+            risk_score: None,
         };
         assert_eq!(f.id, "test-1");
         assert!(f.location.file.ends_with("test.py"));

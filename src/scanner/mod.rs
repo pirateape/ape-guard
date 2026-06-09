@@ -116,6 +116,49 @@ pub enum ScannerError {
     Io(#[from] std::io::Error),
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_arch_scanner_name() {
+        use crate::scanner::arch::ArchitectureAnalyzer;
+        use std::path::Path;
+
+        let analyzer = ArchitectureAnalyzer::new(Path::new("."));
+        assert_eq!(analyzer.name(), "architecture");
+    }
+
+    #[test]
+    fn test_arch_scanner_type() {
+        use crate::find::ScannerType;
+        use crate::scanner::arch::ArchitectureAnalyzer;
+        use std::path::Path;
+
+        let analyzer = ArchitectureAnalyzer::new(Path::new("."));
+        assert_eq!(analyzer.scanner_type(), ScannerType::Architecture);
+    }
+
+    #[tokio::test]
+    async fn test_arch_scanner_installed() {
+        use crate::scanner::arch::ArchitectureAnalyzer;
+        use std::path::Path;
+
+        let analyzer = ArchitectureAnalyzer::new(Path::new("."));
+        assert!(analyzer.check_installed().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_arch_scanner_version() {
+        use crate::scanner::arch::ArchitectureAnalyzer;
+        use std::path::Path;
+
+        let analyzer = ArchitectureAnalyzer::new(Path::new("."));
+        assert!(analyzer.version().await.is_ok());
+    }
+}
+
+pub mod arch;
 pub mod checkov;
 pub mod container;
 pub mod dast;

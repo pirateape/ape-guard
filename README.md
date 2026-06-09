@@ -25,6 +25,8 @@ apeguard scan
 - **Multi-audience reports** — Technical (engineers), Executive (leadership), Roadmap (EMs)
 - **Multi-format output** — Markdown, JSON, SARIF, HTML
 - **Attack chain analysis** — Cross-references findings across scanners to detect multi-stage exploitation paths
+- **AI adversarial grader** — Ollama-powered verification that challenges each finding as false positive, with confidence scoring (optional `--grade` flag)
+- **Risk scoring engine** — 6-dimension unified risk score (severity, confidence, context, attack chains, ZT pillar coverage, AI grade) for every finding + per-scanner health metrics
 - **Architecture risk diagram** — Auto-generated Mermaid diagram of component risks
 - **Caching** — SQLite-backed scan cache with TTL-based pruning avoids re-scanning unchanged targets
 - **LLM remediation** — Ollama-powered remediation suggestions (local, no data exfiltration)
@@ -157,6 +159,7 @@ apeguard report
 | `--reports` | Report type(s): `tech`, `exec`, `roadmap` |
 | `--fail-on` | Exit code behavior: `never`, `high`, `critical` |
 | `--output-dir` | Report output directory (default: `.apeguard/reports`) |
+| `--grade` | Enable AI adversarial grading — verified findings get confidence boost (requires Ollama) |
 | `--no-cache` | Force a full re-scan, ignoring cache |
 
 ---
@@ -193,8 +196,10 @@ Deduplication ─── (file, line, rule_id) composite key
   │
   ├─ Cross-reference ──── Attack chain builder
   ├─ ZT mapping ───────── 8-pillar maturity scorecard
-  ├─ Severity filter
   ├─ LLM remediation ──── Ollama local model (optional)
+  ├─ AI grading ───────── Adversarial "prove FP" verification (--grade)
+  ├─ Severity filter
+  ├─ Risk scoring ──────── 6-dimension unified score (deterministic, always runs)
   │
   ▼
 Reports ─── technical.md  executive.md  roadmap.md  + JSON / SARIF / HTML
@@ -351,12 +356,17 @@ src/
 │   ├── semgrep.rs     # Layer 2: SAST
 │   ├── trivy.rs       # Layer 3: Filesystem SCA
 │   ├── container.rs   # Layer 4: Container image scanning
-│   └── dast.rs        # Layer 5: DAST (Nuclei)
+│   ├── dast.rs        # Layer 5: DAST (Nuclei)
+│   ├── checkov.rs     # Layer 6: IaC misconfiguration scanning
+│   ├── syft.rs        # Layer 7: SBOM inventory
+│   └── arch.rs        # Architecture scanner (infrastructure/docs analysis)
 ├── find/
-│   └── mod.rs         # Canonical finding, severity, scorecard types
+│   └── mod.rs         # Canonical finding, severity, scorecard, grade, risk types
 ├── normalize.rs       # ZT pillar mapping + MITRE ATT&CK
 ├── chain.rs           # Attack chain builder
 ├── arch.rs            # Architecture discovery + risk assessment
+├── grade.rs           # AI adversarial grader (--grade flag, Ollama-powered)
+├── score.rs           # 6-dimension risk scoring engine + scan health
 ├── report/
 │   └── mod.rs         # Report generator (markdown, JSON, SARIF, HTML)
 ├── dedup.rs           # Finding deduplication

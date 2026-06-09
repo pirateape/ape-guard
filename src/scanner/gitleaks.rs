@@ -178,6 +178,8 @@ impl Scanner for Gitleaks {
                 tags: f.Tags.clone(),
                 zt_pillars: vec!["identity".to_string(), "devices".to_string()],
                 cross_refs: vec![],
+                grade: None,
+                risk_score: None,
             })
             .collect();
 

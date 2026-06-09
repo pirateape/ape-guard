@@ -229,6 +229,8 @@ impl Trivy {
                         tags: vec!["dependency".to_string(), v.pkg_name.clone()],
                         zt_pillars: vec![],
                         cross_refs: vec![],
+                        grade: None,
+                        risk_score: None,
                     });
                 }
             }
@@ -311,6 +313,8 @@ impl Trivy {
                         tags: vec!["secret".to_string(), s.category.clone()],
                         zt_pillars: vec![],
                         cross_refs: vec![],
+                        grade: None,
+                        risk_score: None,
                     });
                 }
             }
@@ -397,6 +401,8 @@ impl Trivy {
                         tags: vec!["misconfig".to_string(), "iac".to_string()],
                         zt_pillars: vec![],
                         cross_refs: vec![],
+                        grade: None,
+                        risk_score: None,
                     });
                 }
             }
