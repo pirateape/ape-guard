@@ -15,12 +15,13 @@ RUN cargo build --release 2>/dev/null || true
 RUN rm -rf src
 
 COPY src/ src/
-RUN touch src/main.rs
-RUN cargo build --release
+RUN touch src/main.rs && cargo build --release
 
 # =============================================================================
 # Stage 2: Runtime image with scanner tools
 FROM debian:bookworm-slim
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

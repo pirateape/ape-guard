@@ -109,6 +109,7 @@ pub enum ScannerType {
     Nuclei,
     Zap,
     Architecture,
+    ContextDrift,
     Custom(String),
 }
 
@@ -126,6 +127,7 @@ impl std::fmt::Display for ScannerType {
             ScannerType::Nuclei => write!(f, "Nuclei"),
             ScannerType::Zap => write!(f, "ZAP"),
             ScannerType::Architecture => write!(f, "Architecture"),
+            ScannerType::ContextDrift => write!(f, "ContextDrift"),
             ScannerType::Custom(name) => write!(f, "{}", name),
         }
     }

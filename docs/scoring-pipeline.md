@@ -5,6 +5,7 @@
 ## Motivation
 
 ApeGuard currently scores findings in two isolated ways:
+
 1. **Severity** (Critical/High/Medium/Low/Info) — assigned by the scanner, not verified
 2. **Attack chains** (`chain.rs`) — groups findings by proximity and pattern matches
 
@@ -57,48 +58,48 @@ Each dimension produces a score from 0.0 (no risk) to 1.0 (maximum risk).
 Maps scanner severity to a numeric score:
 
 | Severity | Score | Weight |
-|----------|-------|--------|
-| Critical | 1.00 | 3.0x |
-| High | 0.75 | 2.0x |
-| Medium | 0.50 | 1.0x |
-| Low | 0.25 | 0.5x |
-| Info | 0.10 | 0.25x |
+| -------- | ----- | ------ |
+| Critical | 1.00  | 3.0x   |
+| High     | 0.75  | 2.0x   |
+| Medium   | 0.50  | 1.0x   |
+| Low      | 0.25  | 0.5x   |
+| Info     | 0.10  | 0.25x  |
 
 ### 2. Confidence Score (0.0–1.0)
 
 Based on scanner type + cross-reference count:
 
-| Signal | Score |
-|--------|-------|
-| Single scanner, no cross-refs | 0.4 |
-| Single scanner, has cross-refs | 0.6 |
-| 2+ scanners agree | 0.8 |
-| 3+ scanners agree | 0.95 |
-| Confirmed by AI grader | 0.98 |
-| Rejected by AI grader | 0.05 |
+| Signal                         | Score |
+| ------------------------------ | ----- |
+| Single scanner, no cross-refs  | 0.4   |
+| Single scanner, has cross-refs | 0.6   |
+| 2+ scanners agree              | 0.8   |
+| 3+ scanners agree              | 0.95  |
+| Confirmed by AI grader         | 0.98  |
+| Rejected by AI grader          | 0.05  |
 
 ### 3. Context Score (0.0–1.0)
 
 How close is the finding to critical code paths?
 
-| Location | Score |
-|----------|-------|
-| Test directory, docs, examples | 0.1 |
-| Utility/library code | 0.3 |
-| API handler, controller | 0.6 |
-| Auth/AuthZ code | 0.8 |
-| Security-critical (crypto, TLS) | 0.95 |
-| In production-only paths | 0.7 |
+| Location                        | Score |
+| ------------------------------- | ----- |
+| Test directory, docs, examples  | 0.1   |
+| Utility/library code            | 0.3   |
+| API handler, controller         | 0.6   |
+| Auth/AuthZ code                 | 0.8   |
+| Security-critical (crypto, TLS) | 0.95  |
+| In production-only paths        | 0.7   |
 
 ### 4. Chain Score (0.0–1.0)
 
 Is this finding part of an attack chain?
 
-| Condition | Score |
-|-----------|-------|
-| Not in any chain | 0.3 |
-| In 1 chain | 0.7 |
-| In 2+ chains | 0.9 |
+| Condition                     | Score    |
+| ----------------------------- | -------- |
+| Not in any chain              | 0.3      |
+| In 1 chain                    | 0.7      |
+| In 2+ chains                  | 0.9      |
 | Chain risk multiplier applied | x1.0–2.5 |
 
 ### 5. ZT Pillar Score (0.0–1.0)
@@ -106,23 +107,23 @@ Is this finding part of an attack chain?
 How many Zero Trust pillars does this finding affect?
 
 | Pillars affected | Score |
-|-----------------|-------|
-| 0 | 0.1 |
-| 1 | 0.4 |
-| 2 | 0.6 |
-| 3+ | 0.85 |
+| ---------------- | ----- |
+| 0                | 0.1   |
+| 1                | 0.4   |
+| 2                | 0.6   |
+| 3+               | 0.85  |
 
 ### 6. Grade Score (0.0–1.0)
 
 From Option C's adversarial grader (or defaults):
 
-| Grade Verdict | Score |
-|--------------|-------|
-| Confirmed (confidence ≥ 0.8) | 0.9 |
-| Confirmed (confidence < 0.8) | 0.7 |
-| Needs Review | 0.5 |
-| Rejected | 0.1 |
-| Not graded | 0.5 (neutral) |
+| Grade Verdict                | Score         |
+| ---------------------------- | ------------- |
+| Confirmed (confidence ≥ 0.8) | 0.9           |
+| Confirmed (confidence < 0.8) | 0.7           |
+| Needs Review                 | 0.5           |
+| Rejected                     | 0.1           |
+| Not graded                   | 0.5 (neutral) |
 
 ## Unified Risk Score
 
@@ -191,6 +192,7 @@ pub struct ScanHealthDimensions {
 ## Implementation Plan
 
 ### Phase 1: Scoring Core (`src/score.rs`)
+
 - `UnifiedRiskScore` + `RiskDimensions` structs
 - `ScoreWeights` config (with defaults)
 - `compute_finding_risk()` function — takes a finding + context, returns unified score
@@ -198,18 +200,21 @@ pub struct ScanHealthDimensions {
 - Tests: verify scoring formulas with known inputs
 
 ### Phase 2: Dimension Agents
+
 - Context heuristic (file path analysis)
 - Chain integration (check if finding is in existing attack chains)
 - ZT pillar counting
 - Confidence calculation from cross-refs + scanner identity
 
 ### Phase 3: Integration
+
 - Add `risk_score` to `CanonicalFinding`
 - Wire into scan pipeline (runs after dedup + cross-ref + chain analysis)
 - Add `--score` / `--risk-score` CLI flag
 - Include scores in report output
 
 ### Phase 4: Report Integration
+
 - Findings sorted by risk score (highest first)
 - Risk score shown in finding details
 - Scan health score in summary
@@ -241,11 +246,11 @@ assert!(score.overall < 0.3);  // Rejected + Low = very low score
 
 ## Relationship to Options A-C
 
-| Option | Depends on | Integration |
-|--------|-----------|-------------|
-| A (Signal + Resume + JSONL) | — | Provides the data stream that feeds scoring |
-| B (Skill Two-Layer) | — | Independent (agent infrastructure) |
-| C (Grade Engine) | A | Provides AI verification → feeds `grade` dimension |
-| **D (Scoring Pipeline)** | A, C (optional) | Consumes all other outputs into unified scores |
+| Option                      | Depends on      | Integration                                        |
+| --------------------------- | --------------- | -------------------------------------------------- |
+| A (Signal + Resume + JSONL) | —               | Provides the data stream that feeds scoring        |
+| B (Skill Two-Layer)         | —               | Independent (agent infrastructure)                 |
+| C (Grade Engine)            | A               | Provides AI verification → feeds `grade` dimension |
+| **D (Scoring Pipeline)**    | A, C (optional) | Consumes all other outputs into unified scores     |
 
 Without Option C, the `grade` dimension defaults to neutral (0.5) and scoring still works — just with less signal.
