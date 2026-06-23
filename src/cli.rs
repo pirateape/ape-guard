@@ -81,6 +81,11 @@ pub enum Command {
         #[arg(long)]
         grade: bool,
 
+        /// Enable context drift detection — verifies AGENTS.md/CLAUDE.md/.cursor/rules
+        /// claims against the actual codebase (Layer 8)
+        #[arg(long)]
+        context_drift: bool,
+
         /// Output directory
         #[arg(long, default_value = ".apeguard/reports")]
         output_dir: String,

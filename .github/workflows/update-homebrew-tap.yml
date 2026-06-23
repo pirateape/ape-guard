@@ -4,6 +4,9 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 jobs:
   update-homebrew:
     runs-on: ubuntu-latest
@@ -29,7 +32,7 @@ jobs:
           # Update version and SHA256 in the formula
           sed -i "s/version \".*\"/version \"${{ github.ref_name }}\"/" Formula/apeguard.rb
           sed -i "s/sha256 \".*\"/sha256 \"${{ steps.get_assets.outputs.sha256 }}\"/" Formula/apeguard.rb
-          
+
           # Also update Checkov and Syft dependencies if they're in the formula
           if grep -q "checkov" Formula/apeguard.rb; then
             echo "Checkov dependency already present"
@@ -45,4 +48,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/apeguard.rb
           git commit -m "Update apeguard to ${{ github.ref_name }}"
+          # Use the token in the remote URL for authentication
+          git remote set-url origin https://x-access-token:${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/pirateape/homebrew-tap.git
           git push origin main

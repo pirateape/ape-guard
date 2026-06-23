@@ -96,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
             reports,
             resume,
             grade,
+            context_drift,
             ..
         } => {
             let target = path.clone().unwrap_or_else(|| ".".to_string());
@@ -120,6 +121,7 @@ async fn main() -> anyhow::Result<()> {
                 report_types: reports.clone(),
                 resume: *resume,
                 grade: *grade,
+                context_drift: *context_drift,
             };
             run_scan(scan_args, &cfg).await?;
         }
@@ -217,6 +219,7 @@ struct ScanArgs<'a> {
     ci: bool,
     resume: bool,
     grade: bool,
+    context_drift: bool,
     formats: Vec<cli::OutputFormat>,
     web_target: Option<String>,
     containers: Vec<String>,
@@ -427,6 +430,63 @@ async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()
             }
             Err(e) => {
                 tracing::error!("  {}: failed - {}", name, e);
+            }
+        }
+    }
+
+    // Context Drift Detection (Layer 8) — optional, requires --context-drift flag
+    // Verifies claims in AGENTS.md, CLAUDE.md, .cursor/rules against actual codebase state
+    if args.context_drift {
+        let drift_scanner = scanner::context_drift::ContextDriftScanner::new(&target_path);
+        let drift_result = drift_scanner.scan_drift();
+
+        match drift_result {
+            scanner::context_drift::DriftScanResult::Complete {
+                context_file_count,
+                total_claims,
+                drift_findings,
+                drift_counts,
+            } => {
+                let canonical =
+                    scanner::context_drift::drift_findings_to_canonical(&drift_findings);
+                let drift_count = canonical.len();
+
+                if drift_count > 0 {
+                    tracing::info!(
+                        "Context drift: {} files, {} claims, {} drifts (C:{}, H:{}, M:{}, L:{}, I:{})",
+                        context_file_count,
+                        total_claims,
+                        drift_count,
+                        drift_counts.critical,
+                        drift_counts.high,
+                        drift_counts.medium,
+                        drift_counts.low,
+                        drift_counts.info,
+                    );
+                } else if total_claims > 0 {
+                    tracing::info!(
+                        "Context drift: {} files, {} claims verified — no drift detected",
+                        context_file_count,
+                        total_claims,
+                    );
+                } else {
+                    tracing::info!(
+                        "Context drift: {} context files found but no extractable claims",
+                        context_file_count,
+                    );
+                }
+
+                all_findings.extend(canonical);
+            }
+            scanner::context_drift::DriftScanResult::NoContextFiles => {
+                tracing::info!(
+                    "Context drift: no AGENTS.md, CLAUDE.md, or .cursor/rules files found"
+                );
+            }
+            scanner::context_drift::DriftScanResult::NoClaims => {
+                tracing::info!(
+                    "Context drift: context files found but no claims could be extracted"
+                );
             }
         }
     }

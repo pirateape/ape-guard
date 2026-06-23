@@ -5,6 +5,7 @@
 ## Motivation
 
 ApeGuard's 7 scanner layers produce findings with known false-positive rates:
+
 - **Gitleaks**: ~5-15% FP (noisy on test fixtures, documentation examples)
 - **Semgrep**: ~10-30% FP (context-dependent rules)
 - **Trivy**: ~5% FP (version matching errors)
@@ -75,10 +76,10 @@ This forces the grader to argue against the finding — catching the asymmetry w
 
 ### 2. Per-Finding vs Batch Grading
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **Per-finding** (recommended) | Independent, no cascading errors, parallelizable | Higher LLM cost, slower |
-| **Batch** | Cheaper, faster | Contextual bias between findings |
+| Approach                      | Pros                                             | Cons                             |
+| ----------------------------- | ------------------------------------------------ | -------------------------------- |
+| **Per-finding** (recommended) | Independent, no cascading errors, parallelizable | Higher LLM cost, slower          |
+| **Batch**                     | Cheaper, faster                                  | Contextual bias between findings |
 
 **Recommendation**: Per-finding for critical/high severity. Batch low/info severity.
 
@@ -135,12 +136,16 @@ Severity: {severity}
 File: {file}:{line}
 Snippet:
 ```
+
 {snippet}
+
 ```
 
 ## Context (surrounding code, 5 lines before and after)
 ```
+
 {context}
+
 ```
 
 ## Your task
@@ -176,23 +181,27 @@ The `load_completed_scanners()` function (from Option A) naturally skips already
 ## Implementation Plan
 
 ### Phase 1: Core Grader Module (`src/grade.rs`)
+
 - `GradeVerdict` enum + `RejectReason` enum
 - `grade_finding()` async function — calls Ollama with adversarial prompt
 - `grade_findings()` batch orchestrator
 - Test: unit tests with mock Ollama responses
 
 ### Phase 2: Integration
+
 - Add `grade: Option<GradeVerdict>` to `CanonicalFinding`
 - Add `--grade` flag to CLI
 - Wire into scan pipeline (runs after all scanners, before report)
 - Write grade verdicts to `found_findings.jsonl`
 
 ### Phase 3: Report Integration
+
 - Filter `REJECTED` findings from main report (optional: include in appendix)
 - Show confidence adjustments in report
 - Grade summary section: X confirmed, Y rejected, Z needs review
 
 ### Phase 4: Advanced
+
 - Per-scanner FP rate tracking (learn which scanners produce most rejects)
 - Auto-learned severity adjustments based on historical grade patterns
 - Grade cache (don't re-grade the same finding pattern twice)
@@ -206,7 +215,7 @@ cargo run -- scan /path/to/target --grade
 # Expected:
 # [1/7] gitleaks ... 3 findings
 # [2/7] semgrep ... 5 findings
-# ... 
+# ...
 # [8/8] grading ... 8 findings graded (5 confirmed, 2 rejected, 1 needs review)
 # Report written to .apeguard/reports/
 ```

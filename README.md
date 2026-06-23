@@ -135,32 +135,32 @@ apeguard report
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `scan` | Run a full security assessment on a target directory, container, or web endpoint |
-| `report` | Regenerate reports from a cached scan |
-| `compare` | Diff findings between two scan snapshots |
-| `init` | Create a `.apeguard.yaml` configuration file |
-| `config` | Show or validate the current configuration |
-| `version` | Display version and scanner availability status |
-| `completions` | Generate shell completion scripts |
-| `serve` | Start the MCP server for AI agent integration |
-| `cache` | Manage the scan cache (stats, prune) |
+| Command       | Description                                                                      |
+| ------------- | -------------------------------------------------------------------------------- |
+| `scan`        | Run a full security assessment on a target directory, container, or web endpoint |
+| `report`      | Regenerate reports from a cached scan                                            |
+| `compare`     | Diff findings between two scan snapshots                                         |
+| `init`        | Create a `.apeguard.yaml` configuration file                                     |
+| `config`      | Show or validate the current configuration                                       |
+| `version`     | Display version and scanner availability status                                  |
+| `completions` | Generate shell completion scripts                                                |
+| `serve`       | Start the MCP server for AI agent integration                                    |
+| `cache`       | Manage the scan cache (stats, prune)                                             |
 
 ### Scan options
 
-| Option | Description |
-|--------|-------------|
-| `--layers` | Scanner layers to run: `1` (secrets), `2` (SAST), `3` (SCA), `4` (container), `5` (DAST), `6` (IaC), `7` (SBOM) |
-| `--web` | Web target URL — enables DAST scanning via Nuclei |
-| `--container` | Container image(s) to scan (repeatable) |
-| `--severity` | Minimum finding severity threshold |
-| `--format` | Output format(s): `md`, `json`, `sarif`, `html`, `pdf` (placeholder) |
-| `--reports` | Report type(s): `tech`, `exec`, `roadmap` |
-| `--fail-on` | Exit code behavior: `never`, `high`, `critical` |
-| `--output-dir` | Report output directory (default: `.apeguard/reports`) |
-| `--grade` | Enable AI adversarial grading — verified findings get confidence boost (requires Ollama) |
-| `--no-cache` | Force a full re-scan, ignoring cache |
+| Option         | Description                                                                                                     |
+| -------------- | --------------------------------------------------------------------------------------------------------------- |
+| `--layers`     | Scanner layers to run: `1` (secrets), `2` (SAST), `3` (SCA), `4` (container), `5` (DAST), `6` (IaC), `7` (SBOM) |
+| `--web`        | Web target URL — enables DAST scanning via Nuclei                                                               |
+| `--container`  | Container image(s) to scan (repeatable)                                                                         |
+| `--severity`   | Minimum finding severity threshold                                                                              |
+| `--format`     | Output format(s): `md`, `json`, `sarif`, `html`, `pdf` (placeholder)                                            |
+| `--reports`    | Report type(s): `tech`, `exec`, `roadmap`                                                                       |
+| `--fail-on`    | Exit code behavior: `never`, `high`, `critical`                                                                 |
+| `--output-dir` | Report output directory (default: `.apeguard/reports`)                                                          |
+| `--grade`      | Enable AI adversarial grading — verified findings get confidence boost (requires Ollama)                        |
+| `--no-cache`   | Force a full re-scan, ignoring cache                                                                            |
 
 ---
 
@@ -217,20 +217,20 @@ Example: `AG-GL-20260531-a1b2c3d4-001`
 
 ApeGuard implements the [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — an 8-pillar maturity model that builds on the [CISA Zero Trust Maturity Model](https://www.cisa.gov/zero-trust-maturity-model) as its foundational stepping stone.
 
-> **UZTF** adds quantitative scoring and automated gap analysis on top of CISA's strategic maturity tiers. CISA defines *what* Zero Trust looks like; UZTF defines *how to measure and achieve it*.
+> **UZTF** adds quantitative scoring and automated gap analysis on top of CISA's strategic maturity tiers. CISA defines _what_ Zero Trust looks like; UZTF defines _how to measure and achieve it_.
 
 Each finding is mapped to one or more UZTF pillars:
 
-| Pillar | Description | Example Finding | CISA Origin |
-|--------|-------------|-----------------|-------------|
-| **Identity** | Authentication & authorization | Hardcoded API keys | Direct: CISA Identity |
-| **Device** | Endpoint health & compliance | Outdated dependency | Direct: CISA Devices |
-| **Network** | Segmentation & traffic security | Open port / SSRF | Direct: CISA Networks |
-| **Application** | App security & input validation | SQL injection / XSS | Direct: CISA Applications |
-| **Data** | Encryption & classification | Secrets in source | Direct: CISA Data |
-| **Visibility** | Monitoring & analytics | Missing audit log | Extension of CISA cross-cutting |
-| **Automation** | Automated response & orchestration | CI/CD misconfig | Extension of CISA cross-cutting |
-| **Infrastructure** | Cloud/host configuration | IAM misconfig | Extension of CISA cross-cutting |
+| Pillar             | Description                        | Example Finding     | CISA Origin                     |
+| ------------------ | ---------------------------------- | ------------------- | ------------------------------- |
+| **Identity**       | Authentication & authorization     | Hardcoded API keys  | Direct: CISA Identity           |
+| **Device**         | Endpoint health & compliance       | Outdated dependency | Direct: CISA Devices            |
+| **Network**        | Segmentation & traffic security    | Open port / SSRF    | Direct: CISA Networks           |
+| **Application**    | App security & input validation    | SQL injection / XSS | Direct: CISA Applications       |
+| **Data**           | Encryption & classification        | Secrets in source   | Direct: CISA Data               |
+| **Visibility**     | Monitoring & analytics             | Missing audit log   | Extension of CISA cross-cutting |
+| **Automation**     | Automated response & orchestration | CI/CD misconfig     | Extension of CISA cross-cutting |
+| **Infrastructure** | Cloud/host configuration           | IAM misconfig       | Extension of CISA cross-cutting |
 
 ### Maturity Scoring (UZTF)
 
@@ -247,12 +247,15 @@ The scorecard shows pillar-by-pillar maturity with actionable gap analysis. For 
 ApeGuard generates three report types from every scan, stored in `.apeguard/reports/`:
 
 ### Technical Report (`technical.md`)
+
 For **engineers**. Lists every finding with file location, severity, CWE/CVSS references, ZT pillars, MITRE ATT&CK tactics, attack chain cross-references, and remediation steps.
 
 ### Executive Report (`executive.md`)
+
 For **leadership**. Risk posture summary, severity breakdown, Zero Trust scorecard, top risks, and trend indicators.
 
 ### Roadmap Report (`roadmap.md`)
+
 For **engineering managers**. Prioritized remediation plan organized by time horizon (Immediate / Short-term / Long-term), organized by ZT pillar and severity.
 
 ### Additional Formats
@@ -274,7 +277,7 @@ layers:
   - 3
 severity: all
 binaries:
-  gitleaks: null       # custom path, null = auto-detect in PATH
+  gitleaks: null # custom path, null = auto-detect in PATH
   semgrep: null
   trivy: null
 cache:
@@ -304,20 +307,20 @@ apeguard serve
 
 ### MCP Tools
 
-| Tool | Description |
-|------|-------------|
-| `scan` | Run security assessment (layers 1–5) with optional severity filter |
-| `list_tools` | Enumerate available MCP tools |
-| `resources/read` | Access scan reports, scorecards, and architecture analysis |
+| Tool             | Description                                                        |
+| ---------------- | ------------------------------------------------------------------ |
+| `scan`           | Run security assessment (layers 1–5) with optional severity filter |
+| `list_tools`     | Enumerate available MCP tools                                      |
+| `resources/read` | Access scan reports, scorecards, and architecture analysis         |
 
 ### MCP Resources
 
-| URI | Description |
-|-----|-------------|
-| `apeguard://reports/{scan_id}` | Full scan report |
-| `apeguard://scorecard/{scan_id}` | Zero Trust scorecard |
-| `apeguard://latest` | Latest scan summary |
-| `apeguard://arch_analysis` | Architecture component risk assessment with Mermaid diagram |
+| URI                              | Description                                                 |
+| -------------------------------- | ----------------------------------------------------------- |
+| `apeguard://reports/{scan_id}`   | Full scan report                                            |
+| `apeguard://scorecard/{scan_id}` | Zero Trust scorecard                                        |
+| `apeguard://latest`              | Latest scan summary                                         |
+| `apeguard://arch_analysis`       | Architecture component risk assessment with Mermaid diagram |
 
 ---
 
@@ -388,7 +391,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # required for Gitleaks PR scanning
+          fetch-depth: 0 # required for Gitleaks PR scanning
       - name: Install scanners
         run: |
           brew install gitleaks semgrep trivy
@@ -412,14 +415,14 @@ You may use, copy, modify, and redistribute this software in any project — inc
 
 ### Scanner tool licenses
 
-| Tool | License | Layer |
-|------|---------|-------|
-| Gitleaks | MIT | 1 — Secrets |
-| Semgrep CE | LGPL-2.1 | 2 — SAST |
-| Trivy | Apache 2.0 | 3 + 4 — SCA / Container |
-| Nuclei | MIT | 5 — DAST |
-| Checkov | Apache 2.0 | 6 — IaC |
-| Syft | Apache 2.0 | 7 — SBOM |
+| Tool       | License    | Layer                   |
+| ---------- | ---------- | ----------------------- |
+| Gitleaks   | MIT        | 1 — Secrets             |
+| Semgrep CE | LGPL-2.1   | 2 — SAST                |
+| Trivy      | Apache 2.0 | 3 + 4 — SCA / Container |
+| Nuclei     | MIT        | 5 — DAST                |
+| Checkov    | Apache 2.0 | 6 — IaC                 |
+| Syft       | Apache 2.0 | 7 — SBOM                |
 
 ---
 

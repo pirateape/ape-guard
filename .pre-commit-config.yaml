@@ -1,0 +1,188 @@
+# =============================================================================
+#  Portfolio Pre-commit Template — v2 (fixed for pre-commit v4)
+#  Single config for all project types.
+#  Language-specific hooks run only when matching files exist.
+# =============================================================================
+#  Usage:
+#    pre-commit install --install-hooks
+#    pre-commit run --all-files
+#    pre-commit autoupdate  # update hook versions
+# =============================================================================
+
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
+# ---------------------------------------------------------------------------
+# Universal (all projects)
+# ---------------------------------------------------------------------------
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+        name: check for unmerged merge conflict markers
+      - id: check-case-conflict
+        name: check for case-insensitive filenames
+      - id: detect-private-key
+        name: detect private keys
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # ---------------------------------------------------------------------------
+  # Secrets scanning
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: detect secrets in codebase
+        args:
+          - "--baseline"
+          - ".secrets.baseline"
+          - "--exclude-files"
+          - "^\\.secrets\\.baseline$"
+        exclude: "node_modules|target|\\.git"
+
+  # ---------------------------------------------------------------------------
+  # Rust (all local hooks — no external repo deps, always uses installed
+  # toolchain.  No `rev:` needed for `repo: local`.)
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: bash -c 'cargo fmt --all -- --check'
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: bash -c 'cargo clippy --all-targets -- -D warnings'
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-audit
+        name: cargo audit
+        entry: bash -c 'cargo audit --deny warnings 2>&1 | head -50 || true'
+        language: system
+        types: [rust]
+        always_run: true
+        pass_filenames: false
+
+      - id: cargo-machete
+        name: cargo machete
+        entry: bash -c 'cargo machete 2>&1 | head -30 || true'
+        language: system
+        types: [rust]
+        always_run: true
+        pass_filenames: false
+
+  # ---------------------------------------------------------------------------
+  # Python (ruff + mypy)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.5
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        args: ["--config=pyproject.toml"]
+        types: [python]
+      - id: ruff-format
+        name: ruff (format)
+        args: ["--config=pyproject.toml", "--diff"]
+        types: [python]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.1.0
+    hooks:
+      - id: mypy
+        name: mypy
+        additional_dependencies: []
+        types: [python]
+        args: ["--strict", "--ignore-missing-imports"]
+        pass_filenames: false
+
+  # ---------------------------------------------------------------------------
+  # TypeScript / JavaScript (local hooks — uses system-installed tools)
+  # Use files: patterns to avoid identify type-tag compatibility issues.
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier (format)
+        entry: prettier --write --cache --cache-location=.prettier-cache
+        language: system
+        files: '\.(js|ts|css|scss|json|ya?ml|md|html|svg)$'
+
+      - id: eslint
+        name: eslint
+        entry: bash -c 'eslint --cache --cache-location=.eslint-cache "$@" || true'
+        language: system
+        files: '\.(js|mjs|cjs|ts|jsx|tsx)$'
+
+  # ---------------------------------------------------------------------------
+  # Go (local hooks — no external repo deps)
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: go fmt
+        entry: bash -c 'go fmt ./...'
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-vet
+        name: go vet
+        entry: bash -c 'go vet ./...'
+        language: system
+        types: [go]
+        pass_filenames: false
+
+  # ---------------------------------------------------------------------------
+  # Docker / IaC
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.14.0
+    hooks:
+      - id: hadolint
+        name: hadolint
+        args: ["--ignore=DL3008", "--ignore=SC1091"]
+        types: [dockerfile]
+
+  # # ---------------------------------------------------------------------------
+  # # Markdown (disabled by default — requires project-level .markdownlintrc.json
+  # # and a clean npm cache.  Uncomment and create the config if needed.)
+  # # ---------------------------------------------------------------------------
+  # - repo: https://github.com/igorshubovych/markdownlint-cli
+  #   rev: v0.42.0
+  #   hooks:
+  #     - id: markdownlint
+  #       name: markdownlint
+  #       args:
+  #         - "--config=.markdownlintrc.json"
+  #         - "--disable"
+  #         - "MD013"
+  #         - "--disable"
+  #         - "MD033"
+  #       types: [markdown]
+  #       exclude: "\\.github/ISSUE_TEMPLATE/"
+
+  # ---------------------------------------------------------------------------
+  # Commit message validation
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.30.0
+    hooks:
+      - id: commitizen
+        name: commitizen check
+        stages: [commit-msg]
+        language_version: python3

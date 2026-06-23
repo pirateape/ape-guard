@@ -161,6 +161,7 @@ mod tests {
 pub mod arch;
 pub mod checkov;
 pub mod container;
+pub mod context_drift;
 pub mod dast;
 pub mod gitleaks;
 pub mod semgrep;

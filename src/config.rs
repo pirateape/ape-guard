@@ -27,8 +27,33 @@ pub struct Config {
     #[serde(default)]
     pub llm: LlmConfig,
 
+    /// Context drift detection settings (Layer 8)
+    #[serde(default)]
+    pub context_drift: ContextDriftConfig,
+
     /// Output directory
     pub output_dir: PathBuf,
+}
+
+/// Context drift detection configuration (Layer 8)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextDriftConfig {
+    /// Enable context drift detection by default
+    pub enabled: bool,
+    /// Whether to include unverifiable claims in results
+    pub include_unknown: bool,
+    /// Maximum drift findings to report
+    pub max_findings: usize,
+}
+
+impl Default for ContextDriftConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false, // opt-in via --context-drift or config
+            include_unknown: false,
+            max_findings: 100,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -100,6 +125,7 @@ impl Default for Config {
                 ],
             },
             llm: LlmConfig::default(),
+            context_drift: ContextDriftConfig::default(),
             output_dir: PathBuf::from(".apeguard/reports"),
         }
     }
