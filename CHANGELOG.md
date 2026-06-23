@@ -4,6 +4,8 @@ All notable changes to ApeGuard are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-23
+
 ### Added
 
 - **Context Drift Detection (Layer 8)** — New internal scanner that verifies agent context files (AGENTS.md, CLAUDE.md, .cursor/rules) against the actual codebase state. Detects when documented dependencies, paths, architecture patterns, security practices, and conventions have drifted from reality.
