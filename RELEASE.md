@@ -64,22 +64,24 @@ apeguard scan . --layers 1 --format md --no-cache
 ## Versioning
 
 ApeGuard follows [Semantic Versioning](https://semver.org/):
+
 - **MAJOR** (x.0.0): Breaking changes to CLI interface, output formats, or config
 - **MINOR** (0.x.0): New features, new scanners, new report formats
 - **PATCH** (0.0.x): Bug fixes, performance improvements, scanner updates
 
 ## Version Matrix
 
-| Version | Date       | Highlights                              |
-|---------|------------|-----------------------------------------|
+| Version | Date       | Highlights                                                                                                          |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------- |
 | 0.3.1   | 2026-06-01 | Bug fixes (--no-color, Report --reports/--format, MCP binary paths), CODE_OF_CONDUCT, CONTRIBUTING, issue templates |
-| 0.3.0   | 2026-05-31 | Checkov (IaC) + Syft (SBOM) layers, all 7 layers now available, Gitleaks reliability fix, CI mode safety |
-| 0.2.0   | 2026-05-31 | Parallel scanning, HTML charts, severity-weighted ZT scorecard, --ci flag, multi-arch Docker |
-| 0.1.0   | 2026-05-31 | Initial release: 5-layer scanning, MCP, ZT scorecard, HTML reports |
+| 0.3.0   | 2026-05-31 | Checkov (IaC) + Syft (SBOM) layers, all 7 layers now available, Gitleaks reliability fix, CI mode safety            |
+| 0.2.0   | 2026-05-31 | Parallel scanning, HTML charts, severity-weighted ZT scorecard, --ci flag, multi-arch Docker                        |
+| 0.1.0   | 2026-05-31 | Initial release: 5-layer scanning, MCP, ZT scorecard, HTML reports                                                  |
 
 ## Branch Protection
 
 The `main` branch is protected:
+
 - Direct pushes blocked — changes must go through PRs
 - All CI checks must pass (4 checks: 3 platform builds + format)
 - Pull request review required

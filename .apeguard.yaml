@@ -3,9 +3,9 @@
 # See https://github.com/pirateape/ape-guard for full docs
 
 layers:
-- 1
-- 2
-- 3
+  - 1
+  - 2
+  - 3
 severity: all
 binaries:
   gitleaks: null
@@ -17,11 +17,11 @@ cache:
   ttl_hours: 24
 report:
   formats:
-  - md
+    - md
   types:
-  - tech
-  - exec
-  - roadmap
+    - tech
+    - exec
+    - roadmap
 output_dir: .apeguard/reports
 
 # Scanner layers:

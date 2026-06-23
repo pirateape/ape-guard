@@ -130,6 +130,16 @@ pub fn generate_report(
 
     context.insert("findings", &enriched_findings);
 
+    // Filter context-drift findings (CTX- prefix) for the drift summary section
+    let drift_findings: Vec<_> = enriched_findings
+        .iter()
+        .filter(|f| f.id.starts_with("CTX-"))
+        .cloned()
+        .collect();
+    let drift_count = drift_findings.len();
+    context.insert("drift_findings", &drift_findings);
+    context.insert("drift_count", &drift_count);
+
     let rendered = tera.render(template_name, &context)?;
 
     let filename = format!("{}-report.md", report_type.as_str());
@@ -145,7 +155,7 @@ pub fn generate_report(
     Ok(output_path)
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 struct EnrichedFinding {
     id: String,
     scanner: String,
@@ -230,6 +240,20 @@ target: {{ target }}
 
 {% endfor %}
 
+{% if drift_count > 0 %}
+## Context Drift Summary
+
+Agent context files (AGENTS.md, CLAUDE.md, .cursor/rules) contain **{{ drift_count }}** claims that no longer match the actual codebase state.
+
+| ID | Severity | Category | Claim | File | Evidence |
+|----|----------|----------|-------|------|---------|
+{%- for finding in drift_findings %}
+| {{ finding.id }} | {{ finding.severity }} | {{ finding.rule_id }} | {{ finding.title }} | `{{ finding.file }}`{% if finding.line %}:{{ finding.line }}{% endif %} | {{ finding.description }} |
+{%- endfor %}
+
+**Remediation:** Update the context files to reflect the current state of the codebase, or remove outdated claims. Drift between documented and actual architecture causes wasted agent reasoning and incorrect code suggestions.
+
+{% endif %}
 {% if arch_diagram %}
 ## Architecture Risk Diagram
 

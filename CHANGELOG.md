@@ -4,6 +4,19 @@ All notable changes to ApeGuard are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-23
+
+### Added
+
+- **Context Drift Detection (Layer 8)** — New internal scanner that verifies agent context files (AGENTS.md, CLAUDE.md, .cursor/rules) against the actual codebase state. Detects when documented dependencies, paths, architecture patterns, security practices, and conventions have drifted from reality.
+  - 7 claim categories: Dependency, Path, Architecture, Convention, Security, Semantic, Command
+  - 7 verification strategies: Dependency manifest check (Cargo.toml/package.json/pyproject.toml/go.mod), Path existence (glob), Architecture import scanning, Security tool presence, Convention heuristic, Command extraction, Semantic fallback
+  - Three-layer dependency matching: (1) known technology keywords, (2) generic "use/depend on <name>" regex, (3) Unknown fallback
+  - Enabled with `--context-drift` flag (off by default for projects without context files)
+  - Findings flow through the standard pipeline: scan → normalize → dedup → LLM → GRADE → severity → chains → SCORE → ZT → report
+  - Finding IDs: `CTX-XXXX`, rule IDs: `context-drift.{category}`
+  - 26 tests covering parsers, verifiers, scanner integration, and edge cases
+
 ## [0.3.1] — 2026-06-01
 
 ### Added

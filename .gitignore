@@ -33,3 +33,7 @@ entities.json
 # IDE
 .idea/
 *.iml
+
+# Pre-commit cache
+.prettier-cache
+.eslint-cache
