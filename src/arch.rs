@@ -30,6 +30,7 @@ pub enum ArtifactType {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // P3/P4: DecisionRecord fields populated by future analysis phases
 pub struct DecisionRecord {
     pub id: String,
     pub title: String,
@@ -807,6 +808,7 @@ mod tests {
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         };
 
         let risks = assess_component_risks(&[finding], &artifacts);

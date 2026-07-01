@@ -73,6 +73,7 @@ impl Scanner for DastScanner {
 impl DastScanner {
     fn parse_nuclei_json(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         #[derive(Deserialize)]
+        #[allow(dead_code)] // P3/P4: NucleiResult fields from nuclei JSON; not all fields consumed yet
         struct NucleiResult {
             #[serde(default)]
             template_id: String,
@@ -231,6 +232,7 @@ impl DastScanner {
                 cross_refs: vec![],
                 grade: None,
                 risk_score: None,
+                reachable: None,
             });
         }
 

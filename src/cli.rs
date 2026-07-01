@@ -86,6 +86,19 @@ pub enum Command {
         #[arg(long)]
         context_drift: bool,
 
+        /// Enable STRIDE threat model coverage analysis (Phase 2.1)
+        /// Maps findings to Spoofing/Tampering/Repudiation/InfoDisclosure/DoS/EoP categories
+        #[arg(long)]
+        stride: bool,
+
+        /// Enable Policy-as-Code evaluation — loads and evaluates .rego policy files
+        #[arg(long)]
+        policy: bool,
+
+        /// Directory containing .rego policy files (default: .apeguard/policies)
+        #[arg(long)]
+        policy_dir: Option<String>,
+
         /// Output directory
         #[arg(long, default_value = ".apeguard/reports")]
         output_dir: String,

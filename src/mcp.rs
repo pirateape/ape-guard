@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
-fn load_effective_config() -> crate::config::Config {
+fn load_effective_config() -> anyhow::Result<crate::config::Config> {
     let args = crate::cli::Args {
         command: crate::cli::Command::Serve,
         config: None,
@@ -18,7 +18,7 @@ fn load_effective_config() -> crate::config::Config {
         ci: false,
     };
 
-    crate::config::load(&args).unwrap_or_else(|_| crate::config::Config::default())
+    crate::config::load(&args)
 }
 
 fn summarize_findings_by_severity(findings: &[CanonicalFinding]) -> FindingsBySeverity {
@@ -45,7 +45,7 @@ fn summarize_findings_by_severity(findings: &[CanonicalFinding]) -> FindingsBySe
 
 /// Load findings from the cache (latest scan)
 fn load_cached_findings() -> anyhow::Result<Option<(String, Vec<CanonicalFinding>)>> {
-    let cfg = load_effective_config();
+    let cfg = load_effective_config()?;
     if !cfg.cache.enabled {
         return Ok(None);
     }
@@ -350,7 +350,7 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
     }
 
     // Build config and open cache for persistence
-    let cfg = load_effective_config();
+    let cfg = load_effective_config()?;
     let cache = if cfg.cache.enabled {
         if let Ok(cache) = crate::cache::ScanCache::open(&cfg.cache.path) {
             let _ = cache.enforce_ttl(cfg.cache.ttl_hours);

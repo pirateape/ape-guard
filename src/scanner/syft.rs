@@ -11,6 +11,7 @@ pub struct Syft {
 }
 
 impl Syft {
+    #[allow(dead_code)] // P3/P4: alternative constructor not wired; binary path via config instead
     pub fn new() -> Self {
         Syft {
             binary: "syft".to_string(),
@@ -141,6 +142,7 @@ impl Scanner for Syft {
                     cross_refs: vec![],
                     grade: None,
                     risk_score: None,
+                    reachable: None,
                 }
             })
             .collect();

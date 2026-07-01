@@ -29,6 +29,9 @@ impl ReportType {
 
 /// Generate all three reports from scan results.
 /// `report_types`: which report types to generate; pass an empty slice to generate all.
+/// `stride_result`: optional STRIDE coverage analysis (Phase 2.1)
+/// `policy_result`: optional Policy-as-Code results (Phase 2.3)
+#[allow(clippy::too_many_arguments)]
 pub fn generate_all_reports(
     summary: &ScanSummary,
     findings: &[CanonicalFinding],
@@ -36,6 +39,8 @@ pub fn generate_all_reports(
     output_dir: &Path,
     arch_diagram: Option<&str>,
     report_types: &[ReportType],
+    stride_result: Option<&crate::stride::StrideResult>,
+    policy_result: Option<&crate::policy::PolicyResult>,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
     let mut generated = Vec::new();
 
@@ -58,6 +63,8 @@ pub fn generate_all_reports(
             zt_scorecard,
             output_dir,
             arch_diagram,
+            stride_result,
+            policy_result,
         )?;
         generated.push(path);
     }
@@ -66,6 +73,7 @@ pub fn generate_all_reports(
 }
 
 /// Generate a single report
+#[allow(clippy::too_many_arguments)]
 pub fn generate_report(
     report_type: &ReportType,
     summary: &ScanSummary,
@@ -73,6 +81,8 @@ pub fn generate_report(
     zt_scorecard: &ZeroTrustScorecard,
     output_dir: &Path,
     arch_diagram: Option<&str>,
+    stride_result: Option<&crate::stride::StrideResult>,
+    policy_result: Option<&crate::policy::PolicyResult>,
 ) -> anyhow::Result<std::path::PathBuf> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -139,6 +149,62 @@ pub fn generate_report(
     let drift_count = drift_findings.len();
     context.insert("drift_findings", &drift_findings);
     context.insert("drift_count", &drift_count);
+
+    // STRIDE coverage data (Phase 2.1)
+    if let Some(sr) = stride_result {
+        let stride_table = crate::stride::format_stride_table(sr);
+        context.insert("stride_table", &stride_table);
+        context.insert("stride_coverage_score", &(sr.coverage_score * 100.0));
+        context.insert("stride_covered", &sr.covered_categories);
+        context.insert("stride_total_categories", &6usize);
+        context.insert("stride_gap_count", &sr.gaps.len());
+        let has_stride = true;
+        context.insert("has_stride", &has_stride);
+
+        // Per-category finding counts for the template
+        let stride_coverage_json: Vec<serde_json::Value> = sr
+            .coverage
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "category": c.category.label(),
+                    "id": c.category.id(),
+                    "count": c.finding_count,
+                    "coverage_pct": format!("{:.1}", c.coverage_ratio * 100.0),
+                    "covered": c.covered,
+                })
+            })
+            .collect();
+        context.insert("stride_coverage", &stride_coverage_json);
+    } else {
+        let has_stride = false;
+        context.insert("has_stride", &has_stride);
+        let stride_table = "";
+        context.insert("stride_table", &stride_table);
+    }
+
+    // Policy-as-Code results (Phase 2.3)
+    if let Some(pr) = policy_result {
+        let policy_summary = crate::policy::format_policy_summary(pr);
+        context.insert("policy_summary", &policy_summary);
+        let policy_actions_table = crate::policy::format_policy_actions_table(&pr.actions_applied);
+        context.insert("policy_actions_table", &policy_actions_table);
+        context.insert("policy_policies_loaded", &pr.policies_loaded);
+        context.insert("policy_blocked_count", &pr.blocked_count);
+        context.insert("policy_escalated_count", &pr.escalated_count);
+        context.insert("policy_downgraded_count", &pr.downgraded_count);
+        context.insert("policy_flagged_count", &pr.flagged_count);
+        context.insert("policy_tagged_count", &pr.tagged_count);
+        let has_policy = pr.enabled && pr.policies_loaded > 0;
+        context.insert("has_policy", &has_policy);
+        let policy_enabled = pr.enabled;
+        context.insert("policy_enabled", &policy_enabled);
+    } else {
+        let has_policy = false;
+        context.insert("has_policy", &has_policy);
+        let policy_summary = "";
+        context.insert("policy_summary", &policy_summary);
+    }
 
     let rendered = tera.render(template_name, &context)?;
 
@@ -254,6 +320,22 @@ Agent context files (AGENTS.md, CLAUDE.md, .cursor/rules) contain **{{ drift_cou
 **Remediation:** Update the context files to reflect the current state of the codebase, or remove outdated claims. Drift between documented and actual architecture causes wasted agent reasoning and incorrect code suggestions.
 
 {% endif %}
+{% if has_stride %}
+## STRIDE Threat Model Coverage
+
+STRIDE is a threat classification taxonomy that helps identify gaps in security coverage across six categories.
+
+**Coverage Score: {{ stride_coverage_score }}%** ({{ stride_covered }}/{{ stride_total_categories }} categories covered, {{ stride_gap_count }} gap(s))
+
+{{ stride_table }}
+
+{% if stride_gap_count > 0 %}
+**Remediation:** The gaps above indicate STRIDE categories not covered by the current scan configuration. Consider adding scanners or rule sets that specifically address these threat categories:
+{% for cov in stride_coverage %}{% if not cov.covered %}
+- **{{ cov.category }} ({{ cov.id }})**: {{ cov.count }} findings ({{ cov.coverage_pct }}%) — below threshold{% endif %}
+{%- endfor %}
+{% endif %}
+{% endif %}
 {% if arch_diagram %}
 ## Architecture Risk Diagram
 
@@ -305,6 +387,18 @@ Your **Zero Trust maturity score** is **{{ zt_scorecard.overall_score }} / {{ zt
 {% for finding in findings | slice(end=10) %}
 - **{{ finding.severity }}** — {{ finding.title }} ({{ finding.file }}{% if finding.line %}:{{ finding.line }}{% endif %})
 {% endfor %}
+
+{% if has_stride %}
+## STRIDE Coverage
+
+**{{ stride_coverage_score }}%** of STRIDE categories covered ({{ stride_covered }}/{{ stride_total_categories }}).
+
+| Category | Coverage |
+|----------|:--------:|
+{%- for cov in stride_coverage %}
+| {{ cov.category }} ({{ cov.id }}) | {% if cov.covered %}✅ {{ cov.coverage_pct }}%{% else %}⚠️ {{ cov.coverage_pct }}%{% endif %} |
+{%- endfor %}
+{% endif %}
 "#;
 
 const ROADMAP_TEMPLATE: &str = r#"---
@@ -349,6 +443,8 @@ pub fn generate_json_report(
     zt_scorecard: &ZeroTrustScorecard,
     output_dir: &Path,
     arch_diagram: Option<&str>,
+    stride_result: Option<&crate::stride::StrideResult>,
+    policy_result: Option<&crate::policy::PolicyResult>,
 ) -> anyhow::Result<std::path::PathBuf> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -357,6 +453,10 @@ pub fn generate_json_report(
         summary: &'a ScanSummary,
         scorecard: &'a ZeroTrustScorecard,
         arch_diagram: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stride: Option<&'a crate::stride::StrideResult>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        policy: Option<&'a crate::policy::PolicyResult>,
         findings: Vec<JsonFinding<'a>>,
     }
 
@@ -398,6 +498,8 @@ pub fn generate_json_report(
         summary,
         scorecard: zt_scorecard,
         arch_diagram,
+        stride: stride_result,
+        policy: policy_result,
         findings: json_findings,
     };
 
@@ -416,6 +518,8 @@ pub fn generate_sarif_report(
     zt_scorecard: &ZeroTrustScorecard,
     output_dir: &Path,
     arch_diagram: Option<&str>,
+    _stride_result: Option<&crate::stride::StrideResult>,
+    _policy_result: Option<&crate::policy::PolicyResult>,
 ) -> anyhow::Result<std::path::PathBuf> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -616,6 +720,8 @@ pub fn generate_html_report(
     zt_scorecard: &ZeroTrustScorecard,
     output_dir: &Path,
     arch_diagram: Option<&str>,
+    stride_result: Option<&crate::stride::StrideResult>,
+    policy_result: Option<&crate::policy::PolicyResult>,
 ) -> anyhow::Result<std::path::PathBuf> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -662,6 +768,59 @@ pub fn generate_html_report(
     context.insert("findings", &enriched_findings);
     context.insert("arch_diagram", &arch_diagram.unwrap_or(""));
     context.insert("apeguard_version", env!("CARGO_PKG_VERSION"));
+
+    // STRIDE coverage for HTML report
+    if let Some(sr) = stride_result {
+        let has_stride = true;
+        context.insert("has_stride", &has_stride);
+        let stride_table = crate::stride::format_stride_table(sr);
+        context.insert("stride_table", &stride_table);
+        context.insert("stride_coverage_score", &(sr.coverage_score * 100.0));
+        context.insert("stride_covered", &sr.covered_categories);
+        context.insert("stride_total_categories", &6usize);
+        context.insert("stride_gap_count", &sr.gaps.len());
+
+        let stride_coverage_json: Vec<serde_json::Value> = sr
+            .coverage
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "category": c.category.label(),
+                    "id": c.category.id(),
+                    "count": c.finding_count,
+                    "coverage_pct": format!("{:.1}", c.coverage_ratio * 100.0),
+                    "covered": c.covered,
+                })
+            })
+            .collect();
+        context.insert("stride_coverage", &stride_coverage_json);
+    } else {
+        let has_stride = false;
+        context.insert("has_stride", &has_stride);
+    }
+
+    // Policy-as-Code results for HTML report (Phase 2.3)
+    if let Some(pr) = policy_result {
+        let policy_summary = crate::policy::format_policy_summary(pr);
+        context.insert("policy_summary", &policy_summary);
+        let policy_actions_table = crate::policy::format_policy_actions_table(&pr.actions_applied);
+        context.insert("policy_actions_table", &policy_actions_table);
+        context.insert("policy_policies_loaded", &pr.policies_loaded);
+        context.insert("policy_blocked_count", &pr.blocked_count);
+        context.insert("policy_escalated_count", &pr.escalated_count);
+        context.insert("policy_downgraded_count", &pr.downgraded_count);
+        context.insert("policy_flagged_count", &pr.flagged_count);
+        context.insert("policy_tagged_count", &pr.tagged_count);
+        let has_policy = pr.enabled && pr.policies_loaded > 0;
+        context.insert("has_policy", &has_policy);
+        let policy_enabled = pr.enabled;
+        context.insert("policy_enabled", &policy_enabled);
+    } else {
+        let has_policy = false;
+        context.insert("has_policy", &has_policy);
+        let policy_summary = "";
+        context.insert("policy_summary", &policy_summary);
+    }
 
     let rendered = tera.render("report.html", &context)?;
 
@@ -793,6 +952,20 @@ const HTML_TEMPLATE: &str = r##"<!DOCTYPE html>
   {% if arch_diagram %}
   <h2>Architecture Risk Diagram</h2>
   <div class="arch-diagram"><pre>{{ arch_diagram | safe }}</pre></div>
+  {% endif %}
+
+  {% if has_stride %}
+  <h2>STRIDE Threat Model Coverage</h2>
+  <p>Coverage Score: <strong>{{ stride_coverage_score }}%</strong> ({{ stride_covered }}/{{ stride_total_categories }} categories covered, {{ stride_gap_count }} gap(s))</p>
+  <div class="stride-table">{{ stride_table | safe }}</div>
+  {% if stride_gap_count > 0 %}
+  <h3>Gaps</h3>
+  <ul>
+  {% for cov in stride_coverage %}{% if not cov.covered %}
+    <li><strong>{{ cov.category }} ({{ cov.id }})</strong>: {{ cov.count }} findings ({{ cov.coverage_pct }}%)</li>
+  {% endif %}{% endfor %}
+  </ul>
+  {% endif %}
   {% endif %}
 
   <h2>Findings ({{ total_findings }})</h2>
@@ -959,6 +1132,7 @@ mod tests {
                 cross_refs: vec![],
                 grade: None,
                 risk_score: None,
+                reachable: None,
             },
             CanonicalFinding {
                 id: "F-2".to_string(),
@@ -987,6 +1161,7 @@ mod tests {
                 cross_refs: vec![],
                 grade: None,
                 risk_score: None,
+                reachable: None,
             },
         ];
 
@@ -1039,8 +1214,17 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let output_dir = tmp.path();
 
-        let paths = generate_all_reports(&summary, &findings, &scorecard, output_dir, None, &[])
-            .expect("Failed to generate all reports");
+        let paths = generate_all_reports(
+            &summary,
+            &findings,
+            &scorecard,
+            output_dir,
+            None,
+            &[],
+            None,
+            None,
+        )
+        .expect("Failed to generate all reports");
 
         assert_eq!(paths.len(), 3);
         assert!(paths[0].to_str().unwrap().contains("technical-report.md"));
@@ -1067,6 +1251,8 @@ mod tests {
             output_dir,
             None,
             &[ReportType::Executive],
+            None,
+            None,
         )
         .expect("Failed to generate reports");
 
@@ -1081,8 +1267,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let output_dir = tmp.path();
 
-        let path = generate_json_report(&summary, &findings, &scorecard, output_dir, None)
-            .expect("Failed to generate JSON report");
+        let path = generate_json_report(
+            &summary, &findings, &scorecard, output_dir, None, None, None,
+        )
+        .expect("Failed to generate JSON report");
 
         assert!(path.exists());
         let content = std::fs::read_to_string(path).unwrap();
@@ -1105,6 +1293,8 @@ mod tests {
             &scorecard,
             output_dir,
             Some("graph TD; A-->B;"),
+            None,
+            None,
         )
         .expect("Failed to generate JSON report");
 
@@ -1119,8 +1309,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let output_dir = tmp.path();
 
-        let path = generate_sarif_report(&summary, &findings, &scorecard, output_dir, None)
-            .expect("Failed to generate SARIF report");
+        let path = generate_sarif_report(
+            &summary, &findings, &scorecard, output_dir, None, None, None,
+        )
+        .expect("Failed to generate SARIF report");
 
         assert!(path.exists());
         let content = std::fs::read_to_string(path).unwrap();
@@ -1146,6 +1338,8 @@ mod tests {
             &scorecard,
             output_dir,
             Some("graph LR; A-->C;"),
+            None,
+            None,
         )
         .expect("Failed to generate SARIF report");
 
@@ -1170,6 +1364,8 @@ mod tests {
             &scorecard,
             output_dir,
             None,
+            None,
+            None,
         )
         .expect("Failed to generate technical report");
 
@@ -1193,6 +1389,8 @@ mod tests {
             &scorecard,
             output_dir,
             None,
+            None,
+            None,
         )
         .expect("Failed to generate executive report");
 
@@ -1215,6 +1413,8 @@ mod tests {
             &scorecard,
             output_dir,
             None,
+            None,
+            None,
         )
         .expect("Failed to generate roadmap report");
 
@@ -1236,6 +1436,8 @@ mod tests {
             &scorecard,
             output_dir,
             Some("graph TD; A-->B;"),
+            None,
+            None,
         )
         .expect("Failed to generate technical report with arch diagram");
 
@@ -1277,8 +1479,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let output_dir = tmp.path();
 
-        let path = generate_html_report(&summary, &findings, &scorecard, output_dir, None)
-            .expect("Failed to generate HTML report");
+        let path = generate_html_report(
+            &summary, &findings, &scorecard, output_dir, None, None, None,
+        )
+        .expect("Failed to generate HTML report");
 
         assert!(path.exists());
         assert!(path.to_str().unwrap().ends_with("apeguard-report.html"));
@@ -1306,6 +1510,8 @@ mod tests {
             &scorecard,
             output_dir,
             Some("graph TD; A-->B;"),
+            None,
+            None,
         )
         .expect("Failed to generate HTML report with arch diagram");
 
@@ -1344,6 +1550,8 @@ mod tests {
             &empty_findings,
             &empty_scorecard,
             output_dir,
+            None,
+            None,
             None,
         )
         .expect("Failed to generate HTML report with empty findings");

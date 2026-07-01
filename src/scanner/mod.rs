@@ -39,6 +39,7 @@ pub trait Scanner: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// The scanner type enum variant
+    #[allow(dead_code)] // P3/P4: scanner_type() defined on trait but not yet called by any consumer
     fn scanner_type(&self) -> ScannerType;
 
     /// Check if this scanner is installed and at a compatible version
@@ -167,3 +168,4 @@ pub mod gitleaks;
 pub mod semgrep;
 pub mod syft;
 pub mod trivy;
+pub mod trufflehog;

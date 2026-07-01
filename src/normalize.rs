@@ -131,7 +131,7 @@ pub fn normalize_findings(findings: &mut [CanonicalFinding]) {
             let rule_lower = finding.rule_id.to_lowercase();
             for (rule_pattern, severity) in GITLEAKS_SEVERITY_MAP {
                 if rule_lower.contains(rule_pattern) {
-                    finding.severity = severity.clone();
+                    finding.severity = *severity;
                     break;
                 }
             }
@@ -310,6 +310,7 @@ pub fn compute_gap_analysis(
 }
 
 /// Generate pillar-specific remediation recommendations.
+#[allow(dead_code)] // P3/P4: pillar recommendations not yet wired into report generation
 pub fn generate_pillar_recommendations(
     pillar: &str,
     maturity: MaturityTier,
@@ -474,6 +475,7 @@ mod tests {
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         }
     }
 

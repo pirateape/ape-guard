@@ -320,6 +320,7 @@ pub struct ScanHealthDimensions {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[expect(dead_code)] // P3/P4: ScoreTrend variants populated for health trend reporting; not yet integrated
 pub enum ScoreTrend {
     Improving,
     Stable,
@@ -330,6 +331,7 @@ pub enum ScoreTrend {
 ///
 /// Formula: 1000 - penalties for risk burden, critical density, and volume.
 /// 1000 = perfect security posture. 0 = worst possible.
+#[allow(dead_code)] // P3/P4: health scoring not yet integrated into main scan pipeline
 pub fn compute_scan_health(
     findings: &[CanonicalFinding],
     scanners_used: &[String],
@@ -462,6 +464,7 @@ mod tests {
             cross_refs: cross_ref_list,
             grade,
             risk_score: None,
+            reachable: None,
         }
     }
 

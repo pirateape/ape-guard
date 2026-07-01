@@ -11,6 +11,7 @@ pub struct Checkov {
 }
 
 impl Checkov {
+    #[allow(dead_code)] // P3/P4: alternative constructor not wired; binary path via config instead
     pub fn new() -> Self {
         Checkov {
             binary: "checkov".to_string(),
@@ -177,6 +178,7 @@ impl Scanner for Checkov {
                     cross_refs: vec![],
                     grade: None,
                     risk_score: None,
+                    reachable: None,
                 }
             })
             .collect();

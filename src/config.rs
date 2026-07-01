@@ -31,8 +31,132 @@ pub struct Config {
     #[serde(default)]
     pub context_drift: ContextDriftConfig,
 
+    /// False-positive suppression filters (Stage 3)
+    #[serde(default)]
+    pub filters: FilterConfig,
+
+    /// Reachability analysis configuration (Phase 1.4)
+    #[serde(default)]
+    pub reachability: ReachabilityConfig,
+
+    /// STRIDE threat model coverage analysis (Phase 2.1)
+    #[serde(default)]
+    pub stride: StrideConfig,
+
+    /// Policy-as-Code settings (Phase 2.3)
+    #[serde(default)]
+    pub policy: crate::policy::PolicyConfig,
+
     /// Output directory
     pub output_dir: PathBuf,
+}
+
+/// False-positive suppression configuration.
+/// All filters are opt-in — disabling them keeps findings that would otherwise be dropped.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilterConfig {
+    /// Exclude findings in test file paths (test/, *.test.*, *_test.go, etc.)
+    pub exclude_test_files: bool,
+    /// Exclude findings in vendor/third-party paths (node_modules/, vendor/, etc.)
+    pub exclude_vendor: bool,
+    /// Exclude findings in examples/sandbox/demo paths
+    pub exclude_examples: bool,
+    /// User-defined path patterns to exclude (case-insensitive substring match)
+    pub exclude_paths: Vec<String>,
+    /// Master switch for all path-based exclusions (test + vendor + examples + custom)
+    pub exclude_paths_enabled: bool,
+    /// Drop Info/Low findings in test files even if not path-excluded
+    pub suppress_test_low_severity: bool,
+    /// Require 2+ scanner confirmation (cross_refs) for Info/Low findings to survive
+    pub require_cross_scanner_for_low: bool,
+    /// Minimum confidence level: 0=Tentative, 1=Firm, 2=Certain. Findings below this are filtered.
+    pub min_confidence: u8,
+    /// Minimum severity as u8. Findings below this are filtered. None = no floor.
+    pub min_severity: Option<u8>,
+}
+
+impl Default for FilterConfig {
+    fn default() -> Self {
+        Self {
+            exclude_test_files: true,
+            exclude_vendor: true,
+            exclude_examples: false, // Often findings in examples are relevant
+            exclude_paths: vec![],
+            exclude_paths_enabled: true,
+            suppress_test_low_severity: true,
+            require_cross_scanner_for_low: false, // Off by default — too noisy for small teams
+            min_confidence: 0,                    // Keep all confidence levels by default
+            min_severity: None,                   // No severity floor by default
+        }
+    }
+}
+
+/// Reachability analysis configuration.
+/// Determines which source files are transitively reachable from entry points.
+/// Findings in unreachable (dead) code can be flagged as lower risk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReachabilityConfig {
+    /// Master switch — reachability analysis is opt-in (default: false)
+    pub enabled: bool,
+    /// User-specified entry point file paths (relative to target directory)
+    pub entry_points: Vec<String>,
+    /// File extensions to include in analysis
+    pub include_extensions: Vec<String>,
+    /// Directories to exclude from analysis (relative names)
+    pub exclude_dirs: Vec<String>,
+}
+
+impl Default for ReachabilityConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            entry_points: vec![],
+            include_extensions: vec![
+                "rs".to_string(),
+                "py".to_string(),
+                "js".to_string(),
+                "ts".to_string(),
+                "tsx".to_string(),
+                "jsx".to_string(),
+                "go".to_string(),
+                "c".to_string(),
+                "cpp".to_string(),
+                "h".to_string(),
+                "hpp".to_string(),
+            ],
+            exclude_dirs: vec![
+                ".git".to_string(),
+                "node_modules".to_string(),
+                "target".to_string(),
+                ".apeguard".to_string(),
+                "vendor".to_string(),
+                "__pycache__".to_string(),
+                ".venv".to_string(),
+                "venv".to_string(),
+                "dist".to_string(),
+                "build".to_string(),
+            ],
+        }
+    }
+}
+
+/// STRIDE threat model coverage analysis configuration (Phase 2.1).
+/// Maps findings to the six STRIDE categories and identifies coverage gaps.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrideConfig {
+    /// Master switch — STRIDE analysis is opt-in (default: false)
+    pub enabled: bool,
+    /// Minimum coverage ratio (0.0–1.0) for a category to be considered "covered"
+    pub coverage_threshold: f64,
+}
+
+impl Default for StrideConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            coverage_threshold: 0.05,
+        }
+    }
 }
 
 /// Context drift detection configuration (Layer 8)
@@ -59,6 +183,7 @@ impl Default for ContextDriftConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScannerBinaries {
     pub gitleaks: Option<String>,
+    pub trufflehog: Option<String>,
     pub semgrep: Option<String>,
     pub trivy: Option<String>,
     pub checkov: Option<String>,
@@ -106,6 +231,7 @@ impl Default for Config {
             severity: "all".to_string(),
             binaries: ScannerBinaries {
                 gitleaks: None,
+                trufflehog: None,
                 semgrep: None,
                 trivy: None,
                 checkov: None,
@@ -126,6 +252,10 @@ impl Default for Config {
             },
             llm: LlmConfig::default(),
             context_drift: ContextDriftConfig::default(),
+            filters: FilterConfig::default(),
+            reachability: ReachabilityConfig::default(),
+            stride: StrideConfig::default(),
+            policy: crate::policy::PolicyConfig::default(),
             output_dir: PathBuf::from(".apeguard/reports"),
         }
     }
@@ -208,6 +338,9 @@ fn merge(base: &mut Config, overlay: Config) {
     }
     if overlay.binaries.gitleaks.is_some() {
         base.binaries.gitleaks = overlay.binaries.gitleaks;
+    }
+    if overlay.binaries.trufflehog.is_some() {
+        base.binaries.trufflehog = overlay.binaries.trufflehog;
     }
     if overlay.binaries.semgrep.is_some() {
         base.binaries.semgrep = overlay.binaries.semgrep;
@@ -293,6 +426,7 @@ mod tests {
             severity: "high".into(),
             binaries: ScannerBinaries {
                 gitleaks: Some("/usr/local/bin/gitleaks".into()),
+                trufflehog: None,
                 semgrep: None,
                 trivy: None,
                 checkov: None,
@@ -384,12 +518,14 @@ cache:
     fn test_scanner_binaries_defaults() {
         let bins = ScannerBinaries {
             gitleaks: None,
+            trufflehog: None,
             semgrep: None,
             trivy: None,
             checkov: None,
             syft: None,
         };
         assert!(bins.gitleaks.is_none());
+        assert!(bins.trufflehog.is_none());
         assert!(bins.semgrep.is_none());
         assert!(bins.trivy.is_none());
         assert!(bins.checkov.is_none());

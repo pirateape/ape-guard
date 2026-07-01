@@ -11,6 +11,7 @@ pub struct Semgrep {
 }
 
 impl Semgrep {
+    #[allow(dead_code)] // P3/P4: alternative constructor not wired; binary path via config instead
     pub fn new() -> Self {
         Semgrep {
             binary: "semgrep".to_string(),
@@ -81,6 +82,7 @@ impl Scanner for Semgrep {
         }
 
         #[derive(Deserialize)]
+        #[allow(dead_code)] // P3/P4: SemgrepFinding fields from semgrep JSON; end field not consumed yet
         struct SemgrepFinding {
             check_id: String,
             path: String,
@@ -168,6 +170,7 @@ impl Scanner for Semgrep {
                     cross_refs: vec![],
                     grade: None,
                     risk_score: None,
+                    reachable: None,
                 }
             })
             .collect();

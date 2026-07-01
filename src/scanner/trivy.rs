@@ -231,6 +231,7 @@ impl Trivy {
                         cross_refs: vec![],
                         grade: None,
                         risk_score: None,
+                        reachable: None,
                     });
                 }
             }
@@ -255,6 +256,7 @@ impl Trivy {
 
         #[derive(Deserialize)]
         #[serde(rename_all = "PascalCase")]
+        #[allow(dead_code)] // P3/P4: TrivySecret fields from trivy JSON; not all fields consumed yet
         struct TrivySecret {
             #[serde(rename = "RuleID")]
             rule_id: String,
@@ -315,6 +317,7 @@ impl Trivy {
                         cross_refs: vec![],
                         grade: None,
                         risk_score: None,
+                        reachable: None,
                     });
                 }
             }
@@ -403,6 +406,7 @@ impl Trivy {
                         cross_refs: vec![],
                         grade: None,
                         risk_score: None,
+                        reachable: None,
                     });
                 }
             }

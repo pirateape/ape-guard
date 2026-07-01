@@ -28,6 +28,7 @@ repos:
         name: check for case-insensitive filenames
       - id: detect-private-key
         name: detect private keys
+        exclude: "src/scanner/trufflehog\\.rs$"
       - id: end-of-file-fixer
       - id: trailing-whitespace
         args: ["--markdown-linebreak-ext=md"]
@@ -47,7 +48,7 @@ repos:
           - ".secrets.baseline"
           - "--exclude-files"
           - "^\\.secrets\\.baseline$"
-        exclude: "node_modules|target|\\.git"
+        exclude: "node_modules|target|\\.git|src/scanner/trufflehog\\.rs$"
 
   # ---------------------------------------------------------------------------
   # Rust (all local hooks — no external repo deps, always uses installed

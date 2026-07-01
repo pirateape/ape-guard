@@ -266,6 +266,7 @@ impl ScanCache {
     }
 
     /// Get the last N scan summaries
+    #[allow(dead_code)] // P3/P4: cache inspection API not yet exposed via CLI
     pub fn recent_scans(&self, limit: u32) -> anyhow::Result<Vec<ScanRecord>> {
         if !self.enabled {
             return Ok(vec![]);
@@ -346,6 +347,7 @@ mod tests {
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         }
     }
 

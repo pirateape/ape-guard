@@ -29,6 +29,10 @@ pub struct CanonicalFinding {
     pub cross_refs: Vec<CrossReference>,
     pub grade: Option<GradeVerdict>,
     pub risk_score: Option<UnifiedRiskScore>,
+    /// Whether the finding's source file is transitively reachable from an entry point.
+    /// `None` = not yet analyzed, `Some(true)` = reachable, `Some(false)` = unreachable (dead code).
+    #[serde(default)]
+    pub reachable: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,6 +103,7 @@ pub struct UnifiedRiskScore {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ScannerType {
     Gitleaks,
+    Trufflehog,
     Semgrep,
     TrivyVuln,
     TrivySecret,
@@ -117,6 +122,7 @@ impl std::fmt::Display for ScannerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ScannerType::Gitleaks => write!(f, "Gitleaks"),
+            ScannerType::Trufflehog => write!(f, "TruffleHog"),
             ScannerType::Semgrep => write!(f, "Semgrep"),
             ScannerType::TrivyVuln => write!(f, "Trivy"),
             ScannerType::TrivySecret => write!(f, "Trivy"),
@@ -133,7 +139,7 @@ impl std::fmt::Display for ScannerType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum Severity {
     Info,
     Low,
@@ -266,6 +272,7 @@ mod tests {
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         };
         assert_eq!(f.id, "test-1");
         assert!(f.location.file.ends_with("test.py"));
