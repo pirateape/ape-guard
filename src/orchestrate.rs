@@ -38,7 +38,7 @@ use crate::score;
 use crate::stride;
 
 /// The output of a successful scan — all data needed by main.rs for reporting.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) struct ScanOutput {
     pub findings: Vec<find::CanonicalFinding>,
     pub findings_jsonl_path: PathBuf,
@@ -56,7 +56,7 @@ pub(crate) struct ScanOutput {
 }
 
 /// Arguments for a scan operation, grouped to avoid too-many-arguments lint
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) struct ScanArgs<'a> {
     pub target: &'a str,
     pub layers: &'a [u8],
@@ -156,7 +156,7 @@ fn check_fail_on(findings: &[find::CanonicalFinding], threshold: &cli::FailOnThr
 }
 
 /// Generate reports from scan output
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn generate_summary_report(
     findings: &[find::CanonicalFinding],
     target: &str,

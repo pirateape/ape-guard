@@ -99,6 +99,16 @@ impl Scanner for Trufflehog {
             return Ok(vec![]);
         }
 
+        // Strip security-pragma comments (not valid JSON) before parsing.
+        // TruffleHog output is clean, but test fixtures may have embedded
+        // `// pragma: allowlist secret` comments to appease secret scanners.
+        let content = content.replace(" // pragma: allowlist secret", "");
+        let content = content.replace(" // pragma: allowlist", "");
+
+        if content.trim().is_empty() {
+            return Ok(vec![]);
+        }
+
         // Strategy 1: Try to parse as a JSON array
         if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
             return Trufflehog::parse_json_array(&arr);
@@ -173,7 +183,7 @@ impl Trufflehog {
 fn parse_trufflehog_line(line: &str) -> Result<Option<CanonicalFinding>, ScannerError> {
     // Top-level structure
     #[derive(Deserialize)]
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     #[expect(dead_code)] // P3/P4: TrufflehogResult fields from trufflehog JSON; SourceType/SourceName not consumed yet
     struct TrufflehogResult {
         #[serde(default)]
@@ -201,14 +211,14 @@ fn parse_trufflehog_line(line: &str) -> Result<Option<CanonicalFinding>, Scanner
     }
 
     #[derive(Deserialize)]
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     struct SourceMetadata {
         #[serde(default)]
         Data: Option<SourceData>,
     }
 
     #[derive(Deserialize)]
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     struct SourceData {
         #[serde(default)]
         Filesystem: Option<FileSource>,

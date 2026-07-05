@@ -20,30 +20,47 @@ pub struct ArchitectureArtifact {
     pub decisions: Vec<DecisionRecord>,
 }
 
+/// Categorizes the kind of architecture artifact discovered in the codebase.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ArtifactType {
+    /// Standard architecture documentation (ARCHITECTURE.md)
     ArchitectureDoc,
+    /// Architecture Decision Record (ADR)
     Adr,
+    /// Mermaid diagram (`.mmd` or `.mermaid`)
     MermaidDiagram,
+    /// C4 model diagram
     C4Model,
+    /// Unrecognized architecture artifact
     Unknown,
 }
 
+/// Records an architecture decision extracted from an ADR.
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // P3/P4: DecisionRecord fields populated by future analysis phases
 pub struct DecisionRecord {
+    /// Unique decision identifier
     pub id: String,
+    /// Decision title
     pub title: String,
+    /// Current lifecycle status
     pub status: DecisionStatus,
+    /// Short summary of the decision context
     pub context_summary: String,
 }
 
+/// Lifecycle status of an architecture decision.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DecisionStatus {
+    /// Proposed but not yet accepted
     Proposed,
+    /// Formally accepted and active
     Accepted,
+    /// No longer recommended
     Deprecated,
+    /// Replaced by a newer decision
     Superseded,
+    /// Status could not be determined
     Unknown,
 }
 
@@ -58,11 +75,16 @@ pub struct ComponentRisk {
     pub recommendations: Vec<String>,
 }
 
+/// Severity of risk to an architectural component.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RiskLevel {
+    /// Acceptable risk, no action needed
     Low,
+    /// Moderate risk, should be addressed
     Medium,
+    /// Significant risk, needs attention
     High,
+    /// Critical risk, immediate action required
     Critical,
 }
 

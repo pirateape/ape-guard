@@ -18,7 +18,7 @@ pub enum TrivyMode {
 }
 
 impl Trivy {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn new() -> Self {
         Trivy {
             binary: "trivy".to_string(),
@@ -256,7 +256,7 @@ impl Trivy {
 
         #[derive(Deserialize)]
         #[serde(rename_all = "PascalCase")]
-        #[allow(dead_code)] // P3/P4: TrivySecret fields from trivy JSON; not all fields consumed yet
+        #[expect(dead_code)] // P3/P4: TrivySecret fields from trivy JSON; not all fields consumed yet
         struct TrivySecret {
             #[serde(rename = "RuleID")]
             rule_id: String,

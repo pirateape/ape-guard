@@ -111,7 +111,7 @@ impl Scanner for Gitleaks {
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         // Gitleaks JSON output: array of finding objects
         #[derive(Deserialize)]
-        #[allow(non_snake_case, dead_code)]
+        #[expect(non_snake_case, dead_code)]
         struct GitleaksFinding {
             Description: String,
             StartLine: Option<u32>,

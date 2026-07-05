@@ -46,7 +46,7 @@ fn scanner_is(scanners: &'static [ScannerType]) -> impl Fn(&CanonicalFinding) ->
 }
 
 /// Predicate: finding has at least the given severity.
-#[allow(dead_code)] // P3/P4: not yet wired into chain evaluation
+#[expect(dead_code)] // P3/P4: not yet wired into chain evaluation
 fn severity_at_least(min_sev: Severity) -> impl Fn(&CanonicalFinding) -> bool {
     move |f: &CanonicalFinding| f.severity as u8 >= min_sev as u8
 }
@@ -107,7 +107,7 @@ fn is_misconfig(f: &CanonicalFinding) -> bool {
 }
 
 /// An XSS finding.
-#[allow(dead_code)] // P3/P4: not yet wired into chain evaluation
+#[expect(dead_code)] // P3/P4: not yet wired into chain evaluation
 fn is_xss(f: &CanonicalFinding) -> bool {
     has_any_tag(&["xss"])(f)
         || cwe_prefix("CWE-79")(f)
@@ -467,7 +467,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn make_finding(
         id: &str,
         rule_id: &str,

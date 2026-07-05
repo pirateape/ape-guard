@@ -81,7 +81,7 @@ pub trait Scanner: Send + Sync {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // Error variant is P3 (DAST), rest used
+#[expect(dead_code)] // Error variant is P3 (DAST), rest used
 pub enum ScannerResult {
     Complete {
         name: String,

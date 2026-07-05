@@ -1,7 +1,7 @@
 // Architecture Analysis Scanner
 // Discovers and parses architecture artifacts (ARCHITECTURE.md, ADRs, Mermaid diagrams)
 // Cross-references security findings with architectural components.
-#![allow(dead_code)] // P3/P4: entire module is stub implementation for Phase 3 architecture analysis
+#![expect(dead_code)] // P3/P4: entire module is stub implementation for Phase 3 architecture analysis
 use crate::arch::{
     assess_component_risks, ArchitectureArtifact, ArtifactType, ComponentRisk, DecisionStatus,
 };

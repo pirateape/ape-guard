@@ -307,6 +307,7 @@ pub struct ScanHealthScore {
     pub trend: Option<ScoreTrend>,
 }
 
+/// Breakdown of metrics that compose the overall scan health score.
 #[derive(Debug, Clone, Serialize)]
 pub struct ScanHealthDimensions {
     /// Sum of all finding risk scores
@@ -321,9 +322,13 @@ pub struct ScanHealthDimensions {
 
 #[derive(Debug, Clone, Serialize)]
 #[expect(dead_code)] // P3/P4: ScoreTrend variants populated for health trend reporting; not yet integrated
+/// Direction of change in scan health over successive runs.
 pub enum ScoreTrend {
+    /// Health score is increasing
     Improving,
+    /// Health score is unchanged
     Stable,
+    /// Health score is decreasing
     Declining,
 }
 

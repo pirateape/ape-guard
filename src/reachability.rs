@@ -13,10 +13,11 @@
 use crate::find::CanonicalFinding;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// Results of a reachability analysis pass
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // P3/P4: ReachabilityResult fields populated by reachability analysis; not all fields read yet
+#[expect(dead_code)] // P3/P4: ReachabilityResult fields populated by reachability analysis; not all fields read yet
 pub struct ReachabilityResult {
     /// Whether analysis was actually performed
     pub enabled: bool,
@@ -167,7 +168,7 @@ fn collect_source_files(
     files
 }
 
-#[allow(clippy::only_used_in_recursion)]
+#[expect(clippy::only_used_in_recursion)]
 fn collect_files_recursive(
     root: &Path,
     dir: &Path,
@@ -616,7 +617,8 @@ fn extract_c_imports(content: &str, parent: &Path, target_root: &Path, imports: 
 // ─── Import Graph and BFS ────────────────────────────────────────────────────
 
 /// Adjacency list: file → list of files it imports
-type ImportGraph = HashMap<PathBuf, Vec<PathBuf>>;
+/// Uses `Rc<PathBuf>` so graph construction and BFS share path data without cloning.
+type ImportGraph = HashMap<Rc<PathBuf>, Vec<Rc<PathBuf>>>;
 
 /// Build a dependency graph as an adjacency list from source files to their imports.
 /// Returns (graph, reverse_graph, total_imports_count).
@@ -628,22 +630,31 @@ fn build_import_graph(
     let mut reverse: ImportGraph = HashMap::new();
     let mut total_imports = 0;
 
+    // Wrap each PathBuf in Rc once — cheap clones in hot paths
+    let rc_files: Vec<Rc<PathBuf>> = all_files.iter().map(|f| Rc::new(f.clone())).collect();
+    let path_to_rc: HashMap<&Path, &Rc<PathBuf>> =
+        rc_files.iter().map(|rc| (rc.as_path(), rc)).collect();
+
     // Pre-populate with all files
-    for file in all_files {
-        graph.entry(file.clone()).or_default();
-        reverse.entry(file.clone()).or_default();
+    for file in &rc_files {
+        graph.entry(Rc::clone(file)).or_default();
+        reverse.entry(Rc::clone(file)).or_default();
     }
 
     // Extract imports for each file
-    for file in all_files {
+    for file in &rc_files {
         let imports = extract_imports(file, target_root);
-
-        // Filter imports to only those in our file set
-        let file_set: HashSet<&PathBuf> = all_files.iter().collect();
         for import in &imports {
-            if file_set.contains(import) {
-                graph.get_mut(file).unwrap().push(import.clone());
-                reverse.get_mut(import).unwrap().push(file.clone());
+            if let Some(rc_import) = path_to_rc.get(import.as_path()) {
+                // rc_import is &&Rc<PathBuf>; *rc_import gives &Rc<PathBuf>
+                graph
+                    .get_mut(file)
+                    .expect("file must be pre-populated in graph")
+                    .push(Rc::clone(*rc_import));
+                reverse
+                    .get_mut(*rc_import)
+                    .expect("import must be pre-populated in reverse graph")
+                    .push(Rc::clone(file));
                 total_imports += 1;
             }
         }
@@ -655,30 +666,33 @@ fn build_import_graph(
 /// BFS from all entry points through the import graph.
 /// Returns the set of transitively reachable files.
 fn bfs_reachable_files(graph: &ImportGraph, entry_points: &[PathBuf]) -> HashSet<PathBuf> {
-    let mut reachable: HashSet<PathBuf> = HashSet::new();
-    let mut queue: VecDeque<PathBuf> = VecDeque::new();
+    let mut reachable: HashSet<&Rc<PathBuf>> = HashSet::new();
+    let mut queue: VecDeque<&Rc<PathBuf>> = VecDeque::new();
 
-    // Seed with entry points
+    // Seed with entry points — find matching Rc in the graph by path content
     for entry in entry_points {
-        if !reachable.contains(entry) {
-            reachable.insert(entry.clone());
-            queue.push_back(entry.clone());
+        if let Some(rc_entry) = graph.keys().find(|k| k.as_path() == entry.as_path()) {
+            if !reachable.contains(rc_entry) {
+                reachable.insert(rc_entry);
+                queue.push_back(rc_entry);
+            }
         }
     }
 
     // BFS
     while let Some(current) = queue.pop_front() {
-        if let Some(deps) = graph.get(&current) {
+        if let Some(deps) = graph.get(current) {
             for dep in deps {
                 if !reachable.contains(dep) {
-                    reachable.insert(dep.clone());
-                    queue.push_back(dep.clone());
+                    reachable.insert(dep);
+                    queue.push_back(dep);
                 }
             }
         }
     }
 
-    reachable
+    // Convert back — only clone PathBuf data at the return boundary
+    reachable.into_iter().map(|rc| (**rc).clone()).collect()
 }
 
 // ─── Core Public API ─────────────────────────────────────────────────────────
@@ -1088,69 +1102,69 @@ mod tests {
 
     #[test]
     fn test_bfs_simple() {
-        let mut graph: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
-        let a = PathBuf::from("/a.rs");
-        let b = PathBuf::from("/b.rs");
-        let c = PathBuf::from("/c.rs");
+        let mut graph: ImportGraph = HashMap::new();
+        let a = Rc::new(PathBuf::from("/a.rs"));
+        let b = Rc::new(PathBuf::from("/b.rs"));
+        let c = Rc::new(PathBuf::from("/c.rs"));
 
-        graph.insert(a.clone(), vec![b.clone()]);
-        graph.insert(b.clone(), vec![c.clone()]);
-        graph.insert(c.clone(), vec![]);
+        graph.insert(Rc::clone(&a), vec![Rc::clone(&b)]);
+        graph.insert(Rc::clone(&b), vec![Rc::clone(&c)]);
+        graph.insert(Rc::clone(&c), vec![]);
 
-        let reachable = bfs_reachable_files(&graph, std::slice::from_ref(&a));
-        assert!(reachable.contains(&a));
-        assert!(reachable.contains(&b));
-        assert!(reachable.contains(&c));
+        let reachable = bfs_reachable_files(&graph, &[(*a).clone()]);
+        assert!(reachable.contains::<PathBuf>(&a));
+        assert!(reachable.contains::<PathBuf>(&b));
+        assert!(reachable.contains::<PathBuf>(&c));
         assert_eq!(reachable.len(), 3);
     }
 
     #[test]
     fn test_bfs_with_cycle() {
-        let mut graph: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
-        let a = PathBuf::from("/a.rs");
-        let b = PathBuf::from("/b.rs");
+        let mut graph: ImportGraph = HashMap::new();
+        let a = Rc::new(PathBuf::from("/a.rs"));
+        let b = Rc::new(PathBuf::from("/b.rs"));
 
-        graph.insert(a.clone(), vec![b.clone()]);
-        graph.insert(b.clone(), vec![a.clone()]); // Cycle back
+        graph.insert(Rc::clone(&a), vec![Rc::clone(&b)]);
+        graph.insert(Rc::clone(&b), vec![Rc::clone(&a)]); // Cycle back
 
-        let reachable = bfs_reachable_files(&graph, std::slice::from_ref(&a));
-        assert!(reachable.contains(&a));
-        assert!(reachable.contains(&b));
+        let reachable = bfs_reachable_files(&graph, &[(*a).clone()]);
+        assert!(reachable.contains::<PathBuf>(&a));
+        assert!(reachable.contains::<PathBuf>(&b));
         assert_eq!(reachable.len(), 2);
     }
 
     #[test]
     fn test_bfs_unreachable() {
-        let mut graph: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
-        let a = PathBuf::from("/a.rs");
-        let b = PathBuf::from("/b.rs");
-        let c = PathBuf::from("/c.rs");
+        let mut graph: ImportGraph = HashMap::new();
+        let a = Rc::new(PathBuf::from("/a.rs"));
+        let b = Rc::new(PathBuf::from("/b.rs"));
+        let c = Rc::new(PathBuf::from("/c.rs"));
 
-        graph.insert(a.clone(), vec![b.clone()]);
-        graph.insert(b.clone(), vec![]);
-        graph.insert(c.clone(), vec![]);
+        graph.insert(Rc::clone(&a), vec![Rc::clone(&b)]);
+        graph.insert(Rc::clone(&b), vec![]);
+        graph.insert(Rc::clone(&c), vec![]);
 
-        let reachable = bfs_reachable_files(&graph, std::slice::from_ref(&a));
+        let reachable = bfs_reachable_files(&graph, &[(*a).clone()]);
         assert_eq!(reachable.len(), 2); // a and b reachable, c not
-        assert!(!reachable.contains(&c));
+        assert!(!reachable.contains::<PathBuf>(&c));
     }
 
     #[test]
     fn test_bfs_multiple_entry_points() {
-        let mut graph: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
-        let main = PathBuf::from("/main.rs");
-        let lib = PathBuf::from("/lib.rs");
-        let shared = PathBuf::from("/shared.rs");
-        let unreachable = PathBuf::from("/dead.rs");
+        let mut graph: ImportGraph = HashMap::new();
+        let main = Rc::new(PathBuf::from("/main.rs"));
+        let lib = Rc::new(PathBuf::from("/lib.rs"));
+        let shared = Rc::new(PathBuf::from("/shared.rs"));
+        let unreachable = Rc::new(PathBuf::from("/dead.rs"));
 
-        graph.insert(main.clone(), vec![shared.clone()]);
-        graph.insert(lib.clone(), vec![shared.clone()]);
-        graph.insert(shared.clone(), vec![]);
-        graph.insert(unreachable.clone(), vec![]);
+        graph.insert(Rc::clone(&main), vec![Rc::clone(&shared)]);
+        graph.insert(Rc::clone(&lib), vec![Rc::clone(&shared)]);
+        graph.insert(Rc::clone(&shared), vec![]);
+        graph.insert(Rc::clone(&unreachable), vec![]);
 
-        let reachable = bfs_reachable_files(&graph, &[main.clone(), lib.clone()]);
+        let reachable = bfs_reachable_files(&graph, &[(*main).clone(), (*lib).clone()]);
         assert_eq!(reachable.len(), 3);
-        assert!(!reachable.contains(&unreachable));
+        assert!(!reachable.contains::<PathBuf>(&unreachable));
     }
 
     #[test]

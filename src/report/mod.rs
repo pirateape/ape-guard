@@ -31,7 +31,7 @@ impl ReportType {
 /// `report_types`: which report types to generate; pass an empty slice to generate all.
 /// `stride_result`: optional STRIDE coverage analysis (Phase 2.1)
 /// `policy_result`: optional Policy-as-Code results (Phase 2.3)
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn generate_all_reports(
     summary: &ScanSummary,
     findings: &[CanonicalFinding],
@@ -73,7 +73,7 @@ pub fn generate_all_reports(
 }
 
 /// Generate a single report
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn generate_report(
     report_type: &ReportType,
     summary: &ScanSummary,
@@ -612,7 +612,10 @@ pub fn generate_sarif_report(
     let rules: Vec<SarifRule> = rule_ids
         .iter()
         .map(|id| {
-            let f = findings.iter().find(|f| f.rule_id == *id).unwrap();
+            let f = findings
+                .iter()
+                .find(|f| f.rule_id == *id)
+                .expect("deduplicated rule_ids must match a finding in the set");
             let severity_str = format!("{:?}", f.severity);
             let level = match f.severity {
                 crate::find::Severity::Critical | crate::find::Severity::High => "error",

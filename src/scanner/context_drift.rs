@@ -905,7 +905,10 @@ fn verify_path_claim(claim: &ContextClaim, root: &Path) -> VerificationResult {
     // Check for backtick paths: `src/components/`
     let backtick_re = Regex::new(r"`([\w/\.\-_]+)`").expect("invalid backtick regex");
     if let Some(m) = backtick_re.captures(text) {
-        let claimed_path = m.get(1).unwrap().as_str();
+        let claimed_path = m
+            .get(1)
+            .expect("backtick_re must have capture group 1")
+            .as_str();
         let full_path = root.join(claimed_path);
 
         if full_path.exists() {
@@ -1362,7 +1365,7 @@ impl ContextDriftScanner {
     }
 
     /// Set maximum findings limit
-    #[allow(dead_code)] // P3/P4: builder method not yet used in scan pipeline
+    #[expect(dead_code)] // P3/P4: builder method not yet used in scan pipeline
     pub fn with_max_findings(mut self, max: usize) -> Self {
         self.max_findings = max;
         self
