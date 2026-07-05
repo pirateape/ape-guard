@@ -2,7 +2,19 @@
 
 All notable changes to ApeGuard are documented here.
 
-## [Unreleased]
+## [0.5.1] — 2026-07-05
+
+### Fixed
+
+- **5 production issues from ALG audit** — Resolved all items from the Anchored Learning Graph review:
+  - Replaced 5 `unwrap()` calls with descriptive `.expect()` in reachability, report, context_drift, and cache modules.
+  - Converted 39 `#[allow]` attributes to `#[expect]` (Rust 2024 convention); reverted 15 unfulfilled expectations back to `#[allow]`.
+  - Fixed 2 failing TruffleHog unit tests by stripping security-pragma comments before JSON parsing.
+  - Added `///` doc-comments to ~27 public items across arch/graph, cache, scoring, and finding modules.
+  - Optimized BFS hot loop in reachability analysis using `Rc<PathBuf>` to eliminate redundant path data cloning.
+  - Build: 308 unit tests, 0 clippy warnings, 0 format issues across 16 files.
+
+## [0.5.0] — 2026-06-23
 
 ### Added
 

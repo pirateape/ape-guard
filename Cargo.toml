@@ -1,6 +1,6 @@
 [package]
 name = "apeguard"
-version = "0.4.0"
+version = "0.5.1"
 edition = "2021"
 description = "One-command security posture assessment — layered scans, zero trust mapping, 3-audience reports"
 authors = ["APE-Brain"]
