@@ -59,3 +59,44 @@ Run `cargo build` to compile.
 Run `cargo test` to run the test suite.
 Run `cargo clippy -- -D warnings` to check lints.
 Run `cargo fmt --check` to verify formatting.
+
+## Loop Engineering
+
+This project is operated with [loop engineering](https://github.com/cobusgreyling/loop-engineering) patterns. See `LOOP.md` for the full loop spec and `loop-constraints.md` for binding rules.
+
+### Files
+
+- `STATE.md` — per-project run-state spine. Loop reads this first every run; updates `Last run` and High Priority items.
+- `LOOP.md` — describes the loops that operate on ApeGuard (cadence, skills, gates, upgrade path).
+- `loop-constraints.md` — binding rules; the loop reads this at the start of every run before any action.
+- `loop-budget.md` — daily token caps, kill switch, per-loop limits.
+- `loop-run-log.md` — append-only history of every scheduled run.
+
+### Active Loops
+
+- **Daily Triage (L1)** — 1d cadence via macOS launchd. Report-only. No source edits in week 1–2.
+- **Dependency Sweeper (L2, future)** — 6h cadence, patch CVE-only, requires `loop-verifier` in worktree.
+- **CI Sweeper (L2, future)** — event-driven on `ci.yml` workflow_run failure. Max 3 attempts → escalate.
+
+### Skills in Use
+
+- `loop-triage` — produces prioritized findings (High Priority / Watch / Noise / State Updates). No narrative.
+- `loop-verifier` — REJECT-by-default. Must run `cargo test + cargo clippy -D + cargo fmt --check` in worktree.
+- `minimal-fix` — smallest possible diff that addresses one failure. No unrelated refactors.
+- `loop-guard` — circuit breaker via `loop-ledger.json`. Stops loops from infinite-retrying.
+- `loop-constraints` — reads `loop-constraints.md` and bakes rules into context before any triage runs.
+- `loop-budget` — checks spend at start/end of each run; pauses loop on exceed.
+
+### Sub-Agents
+
+Named agents live in `opencode.json` at repo root. Default to maker/checker split; never let an implementer mark its own work "done".
+
+### Invariants (Do Not Violate)
+
+- The 8 scanner layers are orthogonal — never merge layers without design discussion.
+- CanonicalFinding struct (`src/find/mod.rs`) public fields are the contract — do not change without migration story.
+- Pipeline order is sacred: `scan → normalize → dedup → REACHABILITY → FP FILTER → LLM → GRADE → severity → POLICY → chains → SCORE → ZT → STRIDE → report`. Any insertion requires discussion.
+
+### Kill Switch
+
+Set `loop-pause-all: true` in `STATE.md`. The loop-triage skill reads this flag at start and exits without action.

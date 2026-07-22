@@ -216,7 +216,9 @@ mod tests {
         }"#;
 
         let scanner = Semgrep::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("semgrep test: parse_output should succeed");
 
         assert_eq!(findings.len(), 2);
 
@@ -246,7 +248,9 @@ mod tests {
     fn test_parse_output_empty_results() {
         let json = r#"{ "results": [], "errors": [] }"#;
         let scanner = Semgrep::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("semgrep test: parse_output should succeed");
         assert!(findings.is_empty());
     }
 
@@ -263,7 +267,9 @@ mod tests {
         }"#;
 
         let scanner = Semgrep::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("semgrep test: parse_output should succeed");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::Low); // INFO → Low
     }

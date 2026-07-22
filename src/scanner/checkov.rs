@@ -221,7 +221,9 @@ mod tests {
         }"#;
 
         let scanner = Checkov::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("checkov test: parse_output should succeed");
 
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].scanner, ScannerType::Checkov);
@@ -240,7 +242,7 @@ mod tests {
         let scanner = Checkov::new();
         let findings = scanner
             .parse_output(br#"{"results":{"failed_checks":[]}}"#)
-            .unwrap();
+            .expect("checkov test: parse_output empty should succeed");
         assert!(findings.is_empty());
     }
 }

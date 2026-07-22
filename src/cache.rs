@@ -372,8 +372,8 @@ mod tests {
 
     #[test]
     fn test_record_scan_persists_timestamps() {
-        let tmp = tempfile::tempdir().unwrap();
-        let cache = ScanCache::open(tmp.path()).unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
 
         let findings = vec![sample_finding()];
         let started = "2026-01-01T00:00:00Z";
@@ -388,7 +388,7 @@ mod tests {
                 scanners_used: &["gitleaks".to_string()],
                 findings: &findings,
             })
-            .unwrap();
+            .expect("cache test: record_scan should succeed");
 
         let row: (String, String) = cache
             .conn
@@ -397,7 +397,7 @@ mod tests {
                 params!["scan-1"],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
-            .unwrap();
+            .expect("cache test: query_row should succeed");
 
         assert_eq!(row.0, started);
         assert_eq!(row.1, completed);
@@ -405,8 +405,8 @@ mod tests {
 
     #[test]
     fn test_enforce_ttl_prunes_old_scan_history() {
-        let tmp = tempfile::tempdir().unwrap();
-        let cache = ScanCache::open(tmp.path()).unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
 
         // Insert very old record directly
         cache
@@ -424,9 +424,11 @@ mod tests {
                     "[]"
                 ],
             )
-            .unwrap();
+            .expect("cache test: execute should succeed");
 
-        let removed = cache.enforce_ttl(24).unwrap();
+        let removed = cache
+            .enforce_ttl(24)
+            .expect("cache test: enforce_ttl should succeed");
         assert!(removed >= 1);
 
         let old_exists: Option<String> = cache

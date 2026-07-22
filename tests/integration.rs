@@ -16,7 +16,7 @@ fn test_version() {
 
 #[test]
 fn test_init_creates_config() {
-    let tmpdir = tempfile::tempdir().unwrap();
+    let tmpdir = tempfile::tempdir().expect("failed to create temp dir for integration test");
     let mut cmd = Command::cargo_bin(BINARY).unwrap();
     cmd.arg("init").arg(tmpdir.path()).assert().success();
 
@@ -31,7 +31,7 @@ fn test_init_creates_config() {
 
 #[test]
 fn test_init_fails_if_exists() {
-    let tmpdir = tempfile::tempdir().unwrap();
+    let tmpdir = tempfile::tempdir().expect("failed to create temp dir for integration test");
     let config_path = tmpdir.path().join(".apeguard.yaml");
     std::fs::write(&config_path, "existing: true").unwrap();
 
@@ -75,7 +75,7 @@ fn test_config_paths() {
 
 #[test]
 fn test_scan_on_empty_dir() {
-    let tmpdir = tempfile::tempdir().unwrap();
+    let tmpdir = tempfile::tempdir().expect("failed to create temp dir for integration test");
     let mut cmd = Command::cargo_bin(BINARY).unwrap();
     cmd.args(["scan", tmpdir.path().to_str().unwrap(), "--layers", "1"])
         .assert()
@@ -85,7 +85,7 @@ fn test_scan_on_empty_dir() {
 
 #[test]
 fn test_scan_with_config() {
-    let tmpdir = tempfile::tempdir().unwrap();
+    let tmpdir = tempfile::tempdir().expect("failed to create temp dir for integration test");
 
     // Create a config file
     let config = r#"
@@ -129,7 +129,7 @@ fn test_scan_help() {
 
 #[test]
 fn test_full_scan_with_findings_and_formats() {
-    let tmpdir = tempfile::tempdir().unwrap();
+    let tmpdir = tempfile::tempdir().expect("failed to create temp dir for integration test");
 
     // Create test files with known vulnerabilities
     // Gitleaks should detect the API key pattern
@@ -182,7 +182,6 @@ def run_command(cmd):
         "md,json,sarif",
         "--output-dir",
         output_dir.to_str().unwrap(),
-        "--no-cache",
     ])
     .assert()
     .success()

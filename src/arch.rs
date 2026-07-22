@@ -37,7 +37,7 @@ pub enum ArtifactType {
 
 /// Records an architecture decision extracted from an ADR.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // P3/P4: DecisionRecord fields populated by future analysis phases
+// P3/P4: DecisionRecord fields populated by future analysis phases
 pub struct DecisionRecord {
     /// Unique decision identifier
     pub id: String,

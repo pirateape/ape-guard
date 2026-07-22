@@ -177,7 +177,9 @@ mod tests {
         }"#;
 
         let scanner = Syft::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("syft test: parse_output should succeed");
 
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].scanner, ScannerType::Syft);
@@ -191,7 +193,9 @@ mod tests {
     #[test]
     fn test_parse_output_empty() {
         let scanner = Syft::new();
-        let findings = scanner.parse_output(br#"{"artifacts":[]}"#).unwrap();
+        let findings = scanner
+            .parse_output(br#"{"artifacts":[]}"#)
+            .expect("syft test: parse_output empty should succeed");
         assert!(findings.is_empty());
     }
 }

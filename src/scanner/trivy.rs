@@ -468,7 +468,9 @@ mod tests {
         }"#;
 
         let trivy = make_trivy();
-        let findings = trivy.parse_vuln(json.as_bytes()).unwrap();
+        let findings = trivy
+            .parse_vuln(json.as_bytes())
+            .expect("trivy test: parse_vuln should succeed");
 
         assert_eq!(findings.len(), 2, "Should parse 2 vulnerabilities");
 
@@ -479,7 +481,11 @@ mod tests {
         assert_eq!(f1.title, "Prototype Pollution in lodash");
         assert_eq!(f1.cwe.as_deref(), Some("CWE-1321"));
         assert_eq!(f1.cvss, Some(9.8f32)); // max of 9.8 and 8.1
-        assert!(f1.remediation.as_ref().unwrap().contains("4.17.21"));
+        assert!(f1
+            .remediation
+            .as_ref()
+            .expect("trivy test: f1 should have remediation")
+            .contains("4.17.21"));
 
         // Second finding: HIGH express
         let f2 = &findings[1];
@@ -492,7 +498,9 @@ mod tests {
     fn test_parse_vuln_empty_results() {
         let json = r#"{ "Results": [] }"#;
         let trivy = make_trivy();
-        let findings = trivy.parse_vuln(json.as_bytes()).unwrap();
+        let findings = trivy
+            .parse_vuln(json.as_bytes())
+            .expect("trivy test: parse_vuln should succeed");
         assert!(findings.is_empty());
     }
 
@@ -501,7 +509,9 @@ mod tests {
         // Result with no Vulnerabilities key at all (e.g., clean scan)
         let json = r#"{ "Results": [{ "Target": "clean.txt" }] }"#;
         let trivy = make_trivy();
-        let findings = trivy.parse_vuln(json.as_bytes()).unwrap();
+        let findings = trivy
+            .parse_vuln(json.as_bytes())
+            .expect("trivy test: parse_vuln should succeed");
         assert!(findings.is_empty());
     }
 
@@ -530,7 +540,9 @@ mod tests {
         }"#;
 
         let trivy = Trivy::with_mode(TrivyMode::Secret);
-        let findings = trivy.parse_secret(json.as_bytes()).unwrap();
+        let findings = trivy
+            .parse_secret(json.as_bytes())
+            .expect("trivy test: parse_secret should succeed");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule_id, "generic-api-key");
         assert_eq!(findings[0].severity, Severity::High);

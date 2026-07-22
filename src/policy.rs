@@ -628,7 +628,13 @@ mod tests {
         ];
 
         let input = findings_to_rego_input(&findings);
-        assert_eq!(input["findings"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            input["findings"]
+                .as_array()
+                .expect("policy test: findings should be array")
+                .len(),
+            2
+        );
         assert_eq!(input["findings"][0]["id"], "F-001");
         assert_eq!(input["findings"][0]["severity"], "High");
         assert_eq!(input["scan"]["total_findings"], 2);
@@ -905,7 +911,7 @@ mod tests {
     fn test_empty_findings_no_actions() {
         let (actions, errors) =
             evaluate_policy_actions(&[("test".to_string(), "package apeguard".to_string())], &[])
-                .unwrap();
+                .expect("policy test: evaluate_policy_actions should succeed");
         assert!(actions.is_empty());
         assert!(errors.is_empty());
     }
@@ -919,7 +925,8 @@ mod tests {
             "message": null,
         });
         let regorus_val = regorus::Value::from(input.clone());
-        let roundtrip = serde_json::to_value(&regorus_val).unwrap();
+        let roundtrip = serde_json::to_value(&regorus_val)
+            .expect("policy test: regorus roundtrip should succeed");
         assert_eq!(roundtrip["finding_id"], "F-001");
         assert_eq!(roundtrip["action"], "block");
     }

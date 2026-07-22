@@ -566,7 +566,11 @@ mod tests {
         let mut findings = vec![make_finding("1", "secret", "Secret")];
         normalize_findings(&mut findings); // Sets zt_pillars to ["identity"]
         let sc = compute_zt_scorecard(&findings);
-        let identity = sc.pillars.iter().find(|p| p.name == "identity").unwrap();
+        let identity = sc
+            .pillars
+            .iter()
+            .find(|p| p.name == "identity")
+            .expect("normalize test: identity pillar should exist");
         assert!(identity.score < 100); // Should lose points
         assert_eq!(identity.gap_count, 5); // High severity weight=5
     }
@@ -583,7 +587,11 @@ mod tests {
         ];
         normalize_findings(&mut findings); // Sets zt_pillars for all
         let sc = compute_zt_scorecard(&findings);
-        let identity = sc.pillars.iter().find(|p| p.name == "identity").unwrap();
+        let identity = sc
+            .pillars
+            .iter()
+            .find(|p| p.name == "identity")
+            .expect("normalize test: identity pillar should exist");
         assert_eq!(identity.gap_count, 10); // 6 High × 5 = 30, capped at 10
         assert_eq!(identity.score, 0); // 10 gaps * 10 = 100 deduction → 0
     }
@@ -599,7 +607,7 @@ mod tests {
             .pillars
             .iter()
             .find(|p| p.name == "applications")
-            .unwrap();
+            .expect("normalize test: applications pillar should exist");
         assert_eq!(app.maturity, MaturityTier::Advanced);
 
         // Multiple high severity → Baseline
@@ -610,7 +618,11 @@ mod tests {
         ];
         normalize_findings(&mut findings);
         let sc = compute_zt_scorecard(&findings);
-        let identity = sc.pillars.iter().find(|p| p.name == "identity").unwrap();
+        let identity = sc
+            .pillars
+            .iter()
+            .find(|p| p.name == "identity")
+            .expect("normalize test: identity pillar should exist");
         assert_eq!(identity.maturity, MaturityTier::Baseline);
     }
 
@@ -672,7 +684,7 @@ mod tests {
             .gap_analysis
             .iter()
             .find(|g| g.pillar == "identity")
-            .unwrap();
+            .expect("normalize test: identity gap analysis should exist");
         assert_eq!(identity_ga.current_maturity, MaturityTier::Baseline);
         assert_eq!(identity_ga.blocking_findings, 3);
     }

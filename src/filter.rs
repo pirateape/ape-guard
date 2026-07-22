@@ -18,7 +18,7 @@ use std::path::Path;
 
 /// Statistics from a filter run — used for reporting and logging.
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)] // P3/P4: FilterStats fields populated for reporting; total_before/total_after not yet read
+#[allow(dead_code)] // P4: fields populated for reporting; not all consumed yet
 pub struct FilterStats {
     pub path_excluded: usize,
     pub test_suppressed: usize,

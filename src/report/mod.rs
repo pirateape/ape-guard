@@ -1214,7 +1214,7 @@ mod tests {
     #[test]
     fn test_generate_all_reports_creates_files() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let paths = generate_all_reports(
@@ -1230,13 +1230,23 @@ mod tests {
         .expect("Failed to generate all reports");
 
         assert_eq!(paths.len(), 3);
-        assert!(paths[0].to_str().unwrap().contains("technical-report.md"));
-        assert!(paths[1].to_str().unwrap().contains("executive-report.md"));
-        assert!(paths[2].to_str().unwrap().contains("roadmap-report.md"));
+        assert!(paths[0]
+            .to_str()
+            .expect("report test: path 0 is not valid UTF-8")
+            .contains("technical-report.md"));
+        assert!(paths[1]
+            .to_str()
+            .expect("report test: path 1 is not valid UTF-8")
+            .contains("executive-report.md"));
+        assert!(paths[2]
+            .to_str()
+            .expect("report test: path 2 is not valid UTF-8")
+            .contains("roadmap-report.md"));
 
         for path in &paths {
             assert!(path.exists(), "Report file does not exist: {:?}", path);
-            let content = std::fs::read_to_string(path).unwrap();
+            let content =
+                std::fs::read_to_string(path).expect("report test: failed to read output file");
             assert!(!content.is_empty());
         }
     }
@@ -1244,7 +1254,7 @@ mod tests {
     #[test]
     fn test_generate_selected_report_types() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let paths = generate_all_reports(
@@ -1260,14 +1270,17 @@ mod tests {
         .expect("Failed to generate reports");
 
         assert_eq!(paths.len(), 1);
-        assert!(paths[0].to_str().unwrap().contains("executive-report.md"));
+        assert!(paths[0]
+            .to_str()
+            .expect("report test: path 0 is not valid UTF-8")
+            .contains("executive-report.md"));
         assert!(paths[0].exists());
     }
 
     #[test]
     fn test_generate_json_report_format() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let path = generate_json_report(
@@ -1276,18 +1289,26 @@ mod tests {
         .expect("Failed to generate JSON report");
 
         assert!(path.exists());
-        let content = std::fs::read_to_string(path).unwrap();
-        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        let json: serde_json::Value =
+            serde_json::from_str(&content).expect("report test: failed to parse JSON");
 
         assert_eq!(json["summary"]["scan_id"], "test-scan");
-        assert_eq!(json["findings"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            json["findings"]
+                .as_array()
+                .expect("report test: findings key missing or not array")
+                .len(),
+            2
+        );
         assert_eq!(json["findings"][0]["severity"], "Critical");
     }
 
     #[test]
     fn test_generate_json_report_with_arch_diagram() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let path = generate_json_report(
@@ -1301,15 +1322,17 @@ mod tests {
         )
         .expect("Failed to generate JSON report");
 
-        let content = std::fs::read_to_string(path).unwrap();
-        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        let json: serde_json::Value =
+            serde_json::from_str(&content).expect("report test: failed to parse JSON");
         assert_eq!(json["arch_diagram"], "graph TD; A-->B;");
     }
 
     #[test]
     fn test_generate_sarif_report_format() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let path = generate_sarif_report(
@@ -1318,8 +1341,10 @@ mod tests {
         .expect("Failed to generate SARIF report");
 
         assert!(path.exists());
-        let content = std::fs::read_to_string(path).unwrap();
-        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        let json: serde_json::Value =
+            serde_json::from_str(&content).expect("report test: failed to parse JSON");
 
         assert_eq!(json["version"], "2.1.0");
         assert_eq!(json["runs"][0]["tool"]["driver"]["name"], "ApeGuard");
@@ -1332,7 +1357,7 @@ mod tests {
     #[test]
     fn test_generate_sarif_report_with_arch_diagram() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let path = generate_sarif_report(
@@ -1346,8 +1371,10 @@ mod tests {
         )
         .expect("Failed to generate SARIF report");
 
-        let content = std::fs::read_to_string(path).unwrap();
-        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        let json: serde_json::Value =
+            serde_json::from_str(&content).expect("report test: failed to parse JSON");
         assert_eq!(
             json["runs"][0]["properties"]["apeguard"]["arch_diagram"],
             "graph LR; A-->C;"
@@ -1357,7 +1384,7 @@ mod tests {
     #[test]
     fn test_generate_report_technical_contains_findings() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let path = generate_report(
@@ -1372,7 +1399,8 @@ mod tests {
         )
         .expect("Failed to generate technical report");
 
-        let content = std::fs::read_to_string(path).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
         assert!(content.contains("Hardcoded Secret"));
         assert!(content.contains("SQL Injection"));
         assert!(content.contains("CWE-798"));
@@ -1382,7 +1410,7 @@ mod tests {
     #[test]
     fn test_generate_report_executive_contains_summary() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let path = generate_report(
@@ -1397,7 +1425,8 @@ mod tests {
         )
         .expect("Failed to generate executive report");
 
-        let content = std::fs::read_to_string(path).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
         assert!(content.contains("Executive Security Report"));
         assert!(content.contains("45 / 100"));
         assert!(content.contains("2 findings across 2 scanners"));
@@ -1406,7 +1435,7 @@ mod tests {
     #[test]
     fn test_generate_report_roadmap_contains_remediation() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let path = generate_report(
@@ -1421,7 +1450,8 @@ mod tests {
         )
         .expect("Failed to generate roadmap report");
 
-        let content = std::fs::read_to_string(path).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
         assert!(content.contains("Remediation Roadmap"));
         assert!(content.contains("Rotate the secret"));
     }
@@ -1429,7 +1459,7 @@ mod tests {
     #[test]
     fn test_generate_report_with_arch_diagram_appears() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let path = generate_report(
@@ -1444,7 +1474,8 @@ mod tests {
         )
         .expect("Failed to generate technical report with arch diagram");
 
-        let content = std::fs::read_to_string(path).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
         assert!(content.contains("graph TD; A-->B;"));
     }
 
@@ -1479,7 +1510,7 @@ mod tests {
     #[test]
     fn test_generate_html_report_format() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let path = generate_html_report(
@@ -1490,7 +1521,8 @@ mod tests {
         assert!(path.exists());
         assert!(path.to_str().unwrap().ends_with("apeguard-report.html"));
 
-        let content = std::fs::read_to_string(path).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
         assert!(content.contains("ApeGuard Security Report"));
         assert!(content.contains("test-scan"));
         assert!(content.contains("Hardcoded Secret"));
@@ -1504,7 +1536,7 @@ mod tests {
     #[test]
     fn test_generate_html_report_with_arch_diagram() {
         let (summary, scorecard, findings) = create_test_context();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
 
         let path = generate_html_report(
@@ -1518,7 +1550,8 @@ mod tests {
         )
         .expect("Failed to generate HTML report with arch diagram");
 
-        let content = std::fs::read_to_string(path).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
         assert!(content.contains("graph TD; A-->B;"));
         assert!(content.contains("Architecture Risk Diagram"));
     }
@@ -1544,7 +1577,7 @@ mod tests {
             attack_chains: vec![],
         };
         let empty_scorecard = empty_scorecard();
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
         let output_dir = tmp.path();
         let empty_findings = vec![];
 
@@ -1559,7 +1592,8 @@ mod tests {
         )
         .expect("Failed to generate HTML report with empty findings");
 
-        let content = std::fs::read_to_string(path).unwrap();
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
         assert!(content.contains("ApeGuard Security Report"));
         assert!(content.contains("Findings (0)"));
     }

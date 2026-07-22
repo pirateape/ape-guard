@@ -472,7 +472,9 @@ mod tests {
         }"#;
 
         let scanner = Trufflehog::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("trufflehog test: parse_output should succeed");
 
         assert_eq!(findings.len(), 1);
         let f = &findings[0];
@@ -512,7 +514,9 @@ mod tests {
         }"#;
 
         let scanner = Trufflehog::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("trufflehog test: parse_output should succeed");
 
         assert_eq!(findings.len(), 1);
         let f = &findings[0];
@@ -527,7 +531,9 @@ mod tests {
         {"SourceMetadata":{"Data":{"Filesystem":{"file":"b.txt","line":10}}},"SourceID":1,"SourceType":15,"SourceName":"test","DetectorType":4,"DetectorName":"Slack","Verified":false,"Raw":"xoxb-12345","RawV2":"","Redacted":"","ExtraData":null,"StructuredData":null}"#;
 
         let scanner = Trufflehog::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("trufflehog test: parse_output should succeed");
 
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].rule_id, "trufflehog-github");
@@ -539,14 +545,18 @@ mod tests {
     #[test]
     fn test_parse_output_empty() {
         let scanner = Trufflehog::new();
-        let findings = scanner.parse_output(b"").unwrap();
+        let findings = scanner
+            .parse_output(b"")
+            .expect("trufflehog test: parse_output empty should succeed");
         assert!(findings.is_empty());
     }
 
     #[test]
     fn test_parse_output_whitespace_only() {
         let scanner = Trufflehog::new();
-        let findings = scanner.parse_output(b"\n\n  \n").unwrap();
+        let findings = scanner
+            .parse_output(b"\n\n  \n")
+            .expect("trufflehog test: parse_output whitespace should succeed");
         assert!(findings.is_empty());
     }
 
@@ -577,7 +587,9 @@ mod tests {
         }"#;
 
         let scanner = Trufflehog::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("trufflehog test: parse_output should succeed");
 
         assert_eq!(findings.len(), 1);
         let f = &findings[0];
@@ -607,7 +619,9 @@ mod tests {
         }"#;
 
         let scanner = Trufflehog::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("trufflehog test: parse_output should succeed");
         assert!(findings.is_empty());
     }
 

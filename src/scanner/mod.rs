@@ -160,12 +160,16 @@ mod tests {
 }
 
 pub mod arch;
+pub mod aws_s3;
 pub mod checkov;
 pub mod container;
 pub mod context_drift;
 pub mod dast;
 pub mod gitleaks;
+pub mod mcp_security;
 pub mod semgrep;
 pub mod syft;
+pub mod terraform;
+pub mod tls;
 pub mod trivy;
 pub mod trufflehog;

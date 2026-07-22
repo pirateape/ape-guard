@@ -130,6 +130,10 @@ pub enum ScannerType {
     Zap,
     Architecture,
     ContextDrift,
+    McpSecurity,    // Layer 9: MCP security scanning
+    TerraformIaC,   // Layer 10: Terraform IaC scanning
+    AwsS3,          // Layer 11: AWS S3 bucket permission scanning
+    TlsCertificate, // Layer 12: TLS certificate auditing
     Custom(String),
 }
 
@@ -149,6 +153,10 @@ impl std::fmt::Display for ScannerType {
             ScannerType::Zap => write!(f, "ZAP"),
             ScannerType::Architecture => write!(f, "Architecture"),
             ScannerType::ContextDrift => write!(f, "ContextDrift"),
+            ScannerType::McpSecurity => write!(f, "McpSecurity"),
+            ScannerType::TerraformIaC => write!(f, "TerraformIaC"),
+            ScannerType::AwsS3 => write!(f, "AwsS3"),
+            ScannerType::TlsCertificate => write!(f, "TlsCertificate"),
             ScannerType::Custom(name) => write!(f, "{}", name),
         }
     }

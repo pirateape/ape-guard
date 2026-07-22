@@ -221,7 +221,9 @@ mod tests {
         }"#;
 
         let scanner = ContainerScanner::new("node:18-alpine");
-        let findings = scanner.parse_container_vuln(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_container_vuln(json.as_bytes())
+            .expect("container test: parse_container_vuln should succeed");
 
         assert_eq!(findings.len(), 1);
         let f = &findings[0];
@@ -229,7 +231,11 @@ mod tests {
         assert_eq!(f.severity, Severity::High);
         assert_eq!(f.cvss, Some(7.5f32));
         assert_eq!(f.cwe.as_deref(), Some("CWE-400"));
-        assert!(f.remediation.as_ref().unwrap().contains("1.57.0-r0"));
+        assert!(f
+            .remediation
+            .as_ref()
+            .expect("container test: f should have remediation")
+            .contains("1.57.0-r0"));
         assert!(f.tags.contains(&"node:18-alpine".to_string()));
     }
 
@@ -237,7 +243,9 @@ mod tests {
     fn test_parse_container_vuln_empty() {
         let json = r#"{ "Results": [{ "Target": "clean:latest" }] }"#;
         let scanner = ContainerScanner::new("clean:latest");
-        let findings = scanner.parse_container_vuln(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_container_vuln(json.as_bytes())
+            .expect("container test: parse_container_vuln should succeed");
         assert!(findings.is_empty());
     }
 

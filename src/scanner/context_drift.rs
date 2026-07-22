@@ -1348,7 +1348,7 @@ pub struct ContextDriftScanner {
 
 impl ContextDriftScanner {
     /// Create a new context drift scanner
-    #[allow(dead_code)] // P3/P4: scanner construction uses with_binary(); new() not wired
+    // P3/P4: scanner construction uses with_binary(); new() not wired
     pub fn new(root: &Path) -> Self {
         Self {
             root: root.to_path_buf(),

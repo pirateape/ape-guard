@@ -298,6 +298,7 @@ fn compute_score_confidence(finding: &CanonicalFinding) -> f32 {
 
 /// Overall scan health score (0-1000).
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)] // P3/P4: health scoring not yet integrated into main scan pipeline
 pub struct ScanHealthScore {
     /// Overall health (0 = worst, 1000 = best)
     pub overall: u32,
@@ -309,6 +310,7 @@ pub struct ScanHealthScore {
 
 /// Breakdown of metrics that compose the overall scan health score.
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)] // P3/P4: health scoring not yet integrated into main scan pipeline
 pub struct ScanHealthDimensions {
     /// Sum of all finding risk scores
     pub total_risk_burden: f32,
@@ -808,13 +810,29 @@ mod tests {
 
         // Critical in auth with cross-refs should score highest
         assert!(
-            findings[0].risk_score.as_ref().unwrap().overall
-                > findings[1].risk_score.as_ref().unwrap().overall
+            findings[0]
+                .risk_score
+                .as_ref()
+                .expect("score 0 should be scored")
+                .overall
+                > findings[1]
+                    .risk_score
+                    .as_ref()
+                    .expect("score 1 should be scored")
+                    .overall
         );
         // Rejected low in test should score lowest
         assert!(
-            findings[1].risk_score.as_ref().unwrap().overall
-                < findings[2].risk_score.as_ref().unwrap().overall
+            findings[1]
+                .risk_score
+                .as_ref()
+                .expect("score 1 should be scored")
+                .overall
+                < findings[2]
+                    .risk_score
+                    .as_ref()
+                    .expect("score 2 should be scored")
+                    .overall
         );
     }
 
@@ -875,7 +893,11 @@ mod tests {
 
         let health = compute_scan_health(&findings, &["Gitleaks".into()], 0);
         assert!(health.dimensions.scanner_risk.contains_key("Gitleaks"));
-        let gitleaks_risk = health.dimensions.scanner_risk.get("Gitleaks").unwrap();
+        let gitleaks_risk = health
+            .dimensions
+            .scanner_risk
+            .get("Gitleaks")
+            .expect("Gitleaks should be in health dimensions");
         assert!(*gitleaks_risk > 0.0);
     }
 

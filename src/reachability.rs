@@ -859,9 +859,9 @@ mod tests {
     fn write_file(dir: &Path, rel: &str, content: &str) -> PathBuf {
         let path = dir.join(rel);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap();
+            fs::create_dir_all(parent).expect("reachability test: failed to create parent dir");
         }
-        fs::write(&path, content).unwrap();
+        fs::write(&path, content).expect("reachability test: failed to write file");
         path
     }
 

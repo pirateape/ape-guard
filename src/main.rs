@@ -26,6 +26,7 @@ pub(crate) mod orchestrate;
 pub(crate) mod llm;
 pub(crate) mod policy;
 
+use chrono::Utc;
 use sha2::Digest;
 
 macro_rules! quiet_println {
@@ -143,7 +144,22 @@ async fn main() -> anyhow::Result<()> {
                 policy: *policy,
                 policy_dir: policy_dir.clone(),
             };
-            orchestrate::run_scan(scan_args, &cfg).await?;
+            let scan_output = orchestrate::run_scan(scan_args, &cfg).await?;
+            if cfg.cache.enabled {
+                let scan_id = format!("scan_{}", Utc::now().format("%Y%m%d_%H%M%S"));
+                let now = Utc::now().to_rfc3339();
+                if let Err(e) = scan_output.cache.record_scan(cache::RecordScanInput {
+                    scan_id: &scan_id,
+                    target: &target,
+                    started_at: &scan_output.started_at,
+                    completed_at: &now,
+                    total_findings: scan_output.findings.len() as u32,
+                    scanners_used: &scan_output.scanners_used,
+                    findings: &scan_output.findings,
+                }) {
+                    tracing::warn!("Failed to record scan in cache: {}", e);
+                }
+            }
         }
         cli::Command::Report {
             path,

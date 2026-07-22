@@ -474,8 +474,9 @@ mod tests {
     #[test]
     fn test_config_yaml_roundtrip() {
         let cfg = Config::default();
-        let yaml = serde_yaml::to_string(&cfg).unwrap();
-        let parsed: Config = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = serde_yaml::to_string(&cfg).expect("config test: failed to serialize YAML");
+        let parsed: Config =
+            serde_yaml::from_str(&yaml).expect("config test: failed to deserialize YAML");
         assert_eq!(cfg.layers, parsed.layers);
         assert_eq!(cfg.severity, parsed.severity);
         assert_eq!(cfg.cache.enabled, parsed.cache.enabled);
@@ -493,7 +494,7 @@ cache:
   path: "/tmp/cache"
   ttl_hours: 48
 "#;
-        let cfg: Config = serde_yaml::from_str(yaml).unwrap();
+        let cfg: Config = serde_yaml::from_str(yaml).expect("config test: failed to parse YAML");
         assert_eq!(cfg.layers, vec![1, 5]);
         assert_eq!(cfg.severity, "critical");
         assert!(!cfg.cache.enabled);
@@ -502,12 +503,19 @@ cache:
 
     #[test]
     fn test_generate_init_fails_if_exists() {
-        let tmpdir = tempfile::tempdir().unwrap();
+        let tmpdir = tempfile::tempdir().expect("failed to create temp dir for config test");
         let config_path = tmpdir.path().join(".apeguard.yaml");
-        std::fs::write(&config_path, "existing: true").unwrap();
+        std::fs::write(&config_path, "existing: true")
+            .expect("config test: failed to write config file");
 
         let result = generate_init(
-            Some(tmpdir.path().to_str().unwrap().to_string()),
+            Some(
+                tmpdir
+                    .path()
+                    .to_str()
+                    .expect("config test: temp path is not valid UTF-8")
+                    .to_string(),
+            ),
             crate::cli::InitTemplate::Default,
         );
         assert!(result.is_err());

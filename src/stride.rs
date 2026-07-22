@@ -973,17 +973,17 @@ mod tests {
             .coverage
             .iter()
             .find(|c| c.category == StrideCategory::Spoofing)
-            .unwrap();
+            .expect("stride test: should find Spoofing coverage");
         let tamper = result
             .coverage
             .iter()
             .find(|c| c.category == StrideCategory::Tampering)
-            .unwrap();
+            .expect("stride test: should find Tampering coverage");
         let repud = result
             .coverage
             .iter()
             .find(|c| c.category == StrideCategory::Repudiation)
-            .unwrap();
+            .expect("stride test: should find Repudiation coverage");
 
         assert!((spoof.coverage_ratio - 1.0 / 2.0).abs() < 1e-10); // 1/2
         assert!((tamper.coverage_ratio - 1.0 / 2.0).abs() < 1e-10); // 1/2

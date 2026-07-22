@@ -124,19 +124,13 @@ async fn handle_request(line: &str) -> anyhow::Result<Value> {
 
 /// Handle initialize request.
 fn handle_initialize(id: &Value, params: &Value) -> Value {
-    let protocol_version = params["protocolVersion"].as_str().unwrap_or("unknown");
-    let supported_version = "2025-03-26";
+    let _protocol_version = params["protocolVersion"].as_str().unwrap_or("unknown");
+    // Support the current MCP specification version (2025-11-25)
+    let supported_version = "2025-11-25";
 
-    if protocol_version != supported_version {
-        return json!({
-            "jsonrpc": "2.0",
-            "error": {
-                "code": -32603,
-                "message": format!("Unsupported protocol version: {}. Supported: {}", protocol_version, supported_version)
-            },
-            "id": id
-        });
-    }
+    tracing::debug!(protocol_version = %_protocol_version, "MCP initialize request");
+
+    // Per MCP spec, respond with the version we support. Client decides compatibility.
 
     json!({
         "jsonrpc": "2.0",
@@ -364,17 +358,24 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
 
     // Run scanners
     use crate::scanner::{
-        checkov::Checkov, container::ContainerScanner, dast::DastScanner, gitleaks::Gitleaks,
-        semgrep::Semgrep, syft::Syft, trivy::Trivy, Scanner, ScannerResult,
+        aws_s3::AwsS3Scanner, checkov::Checkov, container::ContainerScanner, context_drift,
+        dast::DastScanner, gitleaks::Gitleaks, mcp_security::McpScanner, semgrep::Semgrep,
+        syft::Syft, terraform::TerraformScanner, tls::TlsScanner, trivy::Trivy,
+        trufflehog::Trufflehog, Scanner, ScannerResult,
     };
     let mut scanners: Vec<Box<dyn Scanner>> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
 
     for layer in &layers {
         match layer {
-            1 => scanners.push(Box::new(Gitleaks::with_binary(
-                cfg.binaries.gitleaks.clone(),
-            ))),
+            1 => {
+                scanners.push(Box::new(Gitleaks::with_binary(
+                    cfg.binaries.gitleaks.clone(),
+                )));
+                scanners.push(Box::new(Trufflehog::with_binary(
+                    cfg.binaries.trufflehog.clone(),
+                )));
+            }
             2 => scanners.push(Box::new(Semgrep::with_binary(cfg.binaries.semgrep.clone()))),
             3 => {
                 scanners.push(Box::new(Trivy::with_mode(
@@ -409,7 +410,28 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
             7 => {
                 scanners.push(Box::new(Syft::with_binary(cfg.binaries.syft.clone())));
             }
-            _ => {}
+            8 => {
+                scanners.push(Box::new(context_drift::ContextDriftScanner::new(
+                    std::path::Path::new("."),
+                )));
+            }
+            9 => {
+                scanners.push(Box::new(McpScanner::new(".apeguard/mcp-config.json")));
+            }
+            10 => {
+                scanners.push(Box::new(TerraformScanner::new(".")));
+            }
+            11 => {
+                scanners.push(Box::new(AwsS3Scanner::new(".apeguard/aws-config.json")));
+            }
+            12 => {
+                scanners.push(Box::new(TlsScanner::new(&[
+                    "/etc/ssl/certs/ca-certificates.crt",
+                ])));
+            }
+            _ => {
+                warnings.push(format!("Unknown layer: {}. Supported layers: 1-12.", layer));
+            }
         }
     }
 
@@ -815,7 +837,7 @@ mod tests {
 
     #[test]
     fn test_initialize_response() {
-        let resp = handle_initialize(&json!(1), &json!({"protocolVersion": "2025-03-26"}));
+        let resp = handle_initialize(&json!(1), &json!({"protocolVersion": "2025-11-25"}));
         assert_eq!(resp["result"]["serverInfo"]["name"], "apeguard");
         assert!(resp["result"]["capabilities"]["tools"].is_object());
     }
@@ -823,7 +845,9 @@ mod tests {
     #[test]
     fn test_list_tools_response() {
         let resp = handle_list_tools(&json!(1));
-        let tools = resp["result"]["tools"].as_array().unwrap();
+        let tools = resp["result"]["tools"]
+            .as_array()
+            .expect("mcp test: tools should be an array");
         let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(tool_names.contains(&"scan"));
         assert!(tool_names.contains(&"findings"));
@@ -835,7 +859,9 @@ mod tests {
     #[test]
     fn test_resource_list() {
         let resp = handle_resource_list(&json!(1));
-        let resources = resp["result"]["resources"].as_array().unwrap();
+        let resources = resp["result"]["resources"]
+            .as_array()
+            .expect("mcp test: resources should be an array");
         assert!(resources
             .iter()
             .any(|r| r["uri"].as_str().unwrap_or("").contains("reports")));
@@ -859,21 +885,21 @@ mod tests {
     fn test_handle_resources_read_valid() {
         let line = r#"{"jsonrpc":"2.0","method":"resources/read","params":{"uri":"apeguard://scorecard/latest"},"id":1}"#;
         let result = tokio::runtime::Runtime::new()
-            .unwrap()
+            .expect("mcp test: failed to create tokio runtime")
             .block_on(handle_request(line));
         assert!(result.is_ok());
-        let resp = result.unwrap();
+        let resp = result.expect("mcp test: request should succeed");
         assert!(resp["result"]["contents"].is_array());
     }
 
     #[test]
     fn test_handle_initialize_valid() {
-        let line = r#"{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-03-26"},"id":1}"#;
+        let line = r#"{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-11-25"},"id":1}"#;
         let result = tokio::runtime::Runtime::new()
-            .unwrap()
+            .expect("mcp test: failed to create tokio runtime")
             .block_on(handle_request(line));
         assert!(result.is_ok());
-        let resp = result.unwrap();
+        let resp = result.expect("mcp test: request should succeed");
         assert_eq!(resp["result"]["serverInfo"]["name"], "apeguard");
     }
 
@@ -881,10 +907,10 @@ mod tests {
     fn test_handle_list_tools_valid() {
         let line = r#"{"jsonrpc":"2.0","method":"listTools","id":1}"#;
         let result = tokio::runtime::Runtime::new()
-            .unwrap()
+            .expect("mcp test: failed to create tokio runtime")
             .block_on(handle_request(line));
         assert!(result.is_ok());
-        let resp = result.unwrap();
+        let resp = result.expect("mcp test: request should succeed");
         assert!(resp["result"]["tools"].is_array());
     }
 
@@ -892,10 +918,10 @@ mod tests {
     fn test_handle_unknown_method() {
         let line = r#"{"jsonrpc":"2.0","method":"unknownMethod","id":1}"#;
         let result = tokio::runtime::Runtime::new()
-            .unwrap()
+            .expect("mcp test: failed to create tokio runtime")
             .block_on(handle_request(line));
         assert!(result.is_ok());
-        let resp = result.unwrap();
+        let resp = result.expect("mcp test: request should succeed");
         assert!(resp.get("error").is_some());
         assert_eq!(resp["error"]["code"], -32601);
     }
@@ -904,7 +930,7 @@ mod tests {
     fn test_handle_invalid_json() {
         let line = "not json";
         let result = tokio::runtime::Runtime::new()
-            .unwrap()
+            .expect("mcp test: failed to create tokio runtime")
             .block_on(handle_request(line));
         assert!(result.is_err());
     }

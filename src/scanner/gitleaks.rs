@@ -222,7 +222,9 @@ mod tests {
         ]"#;
 
         let scanner = Gitleaks::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("gitleaks test: parse_output should succeed");
 
         assert_eq!(findings.len(), 2);
 
@@ -232,7 +234,11 @@ mod tests {
         assert_eq!(f1.severity, Severity::High);
         assert_eq!(f1.location.line, Some(42));
         assert_eq!(f1.cwe.as_deref(), Some("CWE-798"));
-        assert!(f1.remediation.as_ref().unwrap().contains("Rotate"));
+        assert!(f1
+            .remediation
+            .as_ref()
+            .expect("gitleaks test: f1 should have remediation")
+            .contains("Rotate"));
         assert_eq!(f1.location.commit.as_deref(), Some("a1b2c3d4"));
         assert!(f1.tags.contains(&"aws".to_string()));
 
@@ -246,14 +252,18 @@ mod tests {
     #[test]
     fn test_parse_output_empty_array() {
         let scanner = Gitleaks::new();
-        let findings = scanner.parse_output(b"[]").unwrap();
+        let findings = scanner
+            .parse_output(b"[]")
+            .expect("gitleaks test: parse_output empty array should succeed");
         assert!(findings.is_empty());
     }
 
     #[test]
     fn test_parse_output_empty_bytes() {
         let scanner = Gitleaks::new();
-        let findings = scanner.parse_output(b"").unwrap();
+        let findings = scanner
+            .parse_output(b"")
+            .expect("gitleaks test: parse_output empty should succeed");
         assert!(findings.is_empty());
     }
 
@@ -272,7 +282,9 @@ mod tests {
         }"#;
 
         let scanner = Gitleaks::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("gitleaks test: parse_output should succeed");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule_id, "test-rule");
     }
