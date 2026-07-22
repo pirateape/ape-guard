@@ -182,7 +182,6 @@ def run_command(cmd):
         "md,json,sarif",
         "--output-dir",
         output_dir.to_str().unwrap(),
-        "--no-cache",
     ])
     .assert()
     .success()

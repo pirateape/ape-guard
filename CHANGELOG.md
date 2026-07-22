@@ -2,6 +2,16 @@
 
 All notable changes to ApeGuard are documented here.
 
+## [0.5.2] — 2026-07-22
+
+### Fixed
+
+- **MCP protocol version rejection** — `handle_initialize` was hard-rejecting protocol versions != "2025-03-26" with `-32603` error. Now accepts both "2025-11-25" and "2025-03-26", responding with the supported version per spec.
+- **MCP scan tool truncated to layers 1-7** — Extended layer matching to cover all 12 layers including Trufflehog, Context Drift, MCP Security, Terraform, AWS S3, and TLS Certificate.
+- **CLI scan never recorded to cache** — `run_scan()` returned a `cache` field in `ScanOutput` but `main.rs` discarded it. Added `cache.record_scan()` call after scan completion, fixing `apeguard report` always returning "No cached scans found".
+- **Removed unused imports** in 4 scanner test modules; fixed clippy `needless_borrows_for_generic_args` in tls.rs.
+- Build: 336 tests (324 unit + 12 int), 0 clippy warnings, 0 format issues.
+
 ## [0.5.1] — 2026-07-05
 
 ### Fixed

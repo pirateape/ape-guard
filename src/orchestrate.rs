@@ -30,9 +30,10 @@ use crate::policy;
 use crate::reachability;
 use crate::report;
 use crate::scanner::{
-    checkov::Checkov, container::ContainerScanner, context_drift, dast::DastScanner,
-    gitleaks::Gitleaks, semgrep::Semgrep, syft::Syft, trivy::Trivy, trufflehog::Trufflehog,
-    Scanner, ScannerResult,
+    aws_s3::AwsS3Scanner, checkov::Checkov, container::ContainerScanner, context_drift,
+    dast::DastScanner, gitleaks::Gitleaks, mcp_security::McpScanner, semgrep::Semgrep, syft::Syft,
+    terraform::TerraformScanner, tls::TlsScanner, trivy::Trivy, trufflehog::Trufflehog, Scanner,
+    ScannerResult,
 };
 use crate::score;
 use crate::stride;
@@ -340,6 +341,30 @@ pub(crate) async fn run_scan(
             }
             7 => {
                 scanners.push(Box::new(Syft::with_binary(cfg.binaries.syft.clone())));
+            }
+            8 => {
+                // Layer 8: Context Drift Detection
+                scanners.push(Box::new(context_drift::ContextDriftScanner::new(
+                    Path::new("."),
+                )));
+            }
+            9 => {
+                // Layer 9: MCP Security Scanner
+                scanners.push(Box::new(McpScanner::new(".apeguard/mcp-config.json")));
+            }
+            10 => {
+                // Layer 10: Terraform IaC Scanner
+                scanners.push(Box::new(TerraformScanner::new(".")));
+            }
+            11 => {
+                // Layer 11: AWS S3 Scanner
+                scanners.push(Box::new(AwsS3Scanner::new(".apeguard/aws-config.json")));
+            }
+            12 => {
+                // Layer 12: TLS Certificate Scanner
+                scanners.push(Box::new(TlsScanner::new(&[
+                    "/etc/ssl/certs/ca-certificates.crt",
+                ])));
             }
             _ => tracing::warn!("Unknown layer: {}", layer),
         }
