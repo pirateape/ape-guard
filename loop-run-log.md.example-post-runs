@@ -1,0 +1,20 @@
+# Loop Run Log — ApeGuard
+
+> Append-only history of every scheduled loop run.
+> Schema: ISO timestamp | pattern | duration | findings | actions | escalations | tokens est | outcome
+
+## Header
+
+```
+timestamp                   | pattern          | duration_s | findings | actions | escalations | tokens_est | outcome
+```
+
+## Log
+
+2026-07-07T08:00:15Z | daily-triage | 42 | 9 | 0 | 1 | 48000 | success
+2026-07-06T08:00:12Z | daily-triage | 38 | 7 | 0 | 0 | 45000 | success
+2026-07-05T08:00:08Z | daily-triage | 45 | 8 | 0 | 1 | 52000 | success
+2026-07-04T08:00:20Z | daily-triage | 41 | 6 | 0 | 0 | 43000 | success
+2026-07-03T08:00:11Z | daily-triage | 39 | 7 | 0 | 0 | 46000 | success
+2026-07-02T08:00:14Z | daily-triage | 44 | 9 | 0 | 1 | 49000 | success
+2026-07-01T08:00:09Z | daily-triage | 37 | 5 | 0 | 0 | 42000 | success

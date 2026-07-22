@@ -6,19 +6,31 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
+/// SQLite-backed cache for incremental scanning results.
+///
+/// Stores file content hashes and scan results to enable
+/// incremental scans that skip unchanged files.
 pub struct ScanCache {
     conn: Connection,
     enabled: bool,
     db_path: PathBuf,
 }
 
+/// Input parameters for recording a completed scan in the cache.
 pub struct RecordScanInput<'a> {
+    /// Unique scan identifier
     pub scan_id: &'a str,
+    /// Target path or repository scanned
     pub target: &'a str,
+    /// ISO-8601 timestamp when the scan started
     pub started_at: &'a str,
+    /// ISO-8601 timestamp when the scan completed
     pub completed_at: &'a str,
+    /// Total number of findings discovered
     pub total_findings: u32,
+    /// Names of scanners that were used
     pub scanners_used: &'a [String],
+    /// All findings from the scan
     pub findings: &'a [CanonicalFinding],
 }
 
@@ -57,7 +69,7 @@ impl ScanCache {
     /// Create a disabled cache (no-op)
     pub fn disabled() -> Self {
         ScanCache {
-            conn: Connection::open_in_memory().unwrap(),
+            conn: Connection::open_in_memory().expect("in-memory SQLite open must succeed"),
             enabled: false,
             db_path: PathBuf::from(":memory:"),
         }
@@ -266,6 +278,7 @@ impl ScanCache {
     }
 
     /// Get the last N scan summaries
+    #[expect(dead_code)] // P3/P4: cache inspection API not yet exposed via CLI
     pub fn recent_scans(&self, limit: u32) -> anyhow::Result<Vec<ScanRecord>> {
         if !self.enabled {
             return Ok(vec![]);
@@ -293,14 +306,21 @@ impl ScanCache {
     }
 }
 
+/// Summary of a previously recorded scan from the cache.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Public struct — fields used externally
+#[expect(dead_code)] // Public struct — fields used externally
 pub struct ScanRecord {
+    /// Unique scan identifier
     pub scan_id: String,
+    /// Target that was scanned
     pub target: String,
+    /// ISO-8601 timestamp when the scan started
     pub started_at: String,
+    /// ISO-8601 timestamp when the scan completed
     pub completed_at: Option<String>,
+    /// Total findings discovered
     pub total_findings: u32,
+    /// Comma-separated list of scanner names used
     pub scanners_used: String,
 }
 
@@ -346,13 +366,14 @@ mod tests {
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         }
     }
 
     #[test]
     fn test_record_scan_persists_timestamps() {
-        let tmp = tempfile::tempdir().unwrap();
-        let cache = ScanCache::open(tmp.path()).unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
 
         let findings = vec![sample_finding()];
         let started = "2026-01-01T00:00:00Z";
@@ -367,7 +388,7 @@ mod tests {
                 scanners_used: &["gitleaks".to_string()],
                 findings: &findings,
             })
-            .unwrap();
+            .expect("cache test: record_scan should succeed");
 
         let row: (String, String) = cache
             .conn
@@ -376,7 +397,7 @@ mod tests {
                 params!["scan-1"],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
-            .unwrap();
+            .expect("cache test: query_row should succeed");
 
         assert_eq!(row.0, started);
         assert_eq!(row.1, completed);
@@ -384,8 +405,8 @@ mod tests {
 
     #[test]
     fn test_enforce_ttl_prunes_old_scan_history() {
-        let tmp = tempfile::tempdir().unwrap();
-        let cache = ScanCache::open(tmp.path()).unwrap();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
 
         // Insert very old record directly
         cache
@@ -403,9 +424,11 @@ mod tests {
                     "[]"
                 ],
             )
-            .unwrap();
+            .expect("cache test: execute should succeed");
 
-        let removed = cache.enforce_ttl(24).unwrap();
+        let removed = cache
+            .enforce_ttl(24)
+            .expect("cache test: enforce_ttl should succeed");
         assert!(removed >= 1);
 
         let old_exists: Option<String> = cache

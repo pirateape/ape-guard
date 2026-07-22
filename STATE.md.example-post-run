@@ -1,0 +1,58 @@
+# Loop State — ApeGuard
+
+Last run: 2026-07-07T08:00:15Z
+
+## High Priority (loop is acting or waiting on human)
+
+- [ ] P5-A: Clippy 15 warnings → 0 (incl. run_scan ScanArgs struct refactor)
+  Loop action: Report-only. Human-owned until L2 enabled.
+- [ ] P5-B: Parser fixture tests: trivy/container/gitleaks/semgrep/dast parse_output
+- [ ] P5-C: H-6 MCP layers 4+5, H-7 MCP resources/read, H-8 run_report arch_diagram, H-4b --quiet gate
+- [ ] P5-D: M-5..M-12, L-2..L-10 (see AUDIT.md for full list)
+- [ ] P5-E: Test coverage: cache.rs, llm.rs, report/mod.rs
+- [ ] P5-F: V1.0: HTML report, README polish, Homebrew auto-update, Docker
+- [ ] **NEW** clippy: unused_import in src/scanner/gitleaks.rs:12
+  Why: Clippy warning — easy fix, good L2 candidate when enabled
+  Suggested loop action: open worktree → minimal-fix → verifier → draft PR
+  Effort: small (<30m)
+  Source: cargo clippy
+- [ ] **NEW** test flakiness: test_context_drift_verifier occasionally times out (2/20 runs)
+  Why: CI flake — not a code bug; masks real failures
+  Suggested loop action: escalate-human (quarantine test, file GitHub issue)
+  Effort: medium (investigation)
+  Source: ci
+- [ ] **NEW** dependabot: bump semver from 1.0.21 to 1.0.22 (patch)
+  Why: Patch version, no breaking changes
+  Suggested loop action: dependency-sweeper L2 will handle when enabled
+  Effort: small (automerge candidate)
+  Source: cargo audit / cargo outdated
+
+## Watch List
+
+- v0.5.0 release assets across 4 platforms (linux/macOS x86_64+aarch64, Windows x86_64)
+- Homebrew tap auto-update reliability (update-homebrew-tap.yml workflow)
+- STRIDE keyword+CWE mapping coverage (35 tests)
+- ZT Scorecard: 8 pillars, 0-100 per pillar
+- Policy-as-Code (Phase 2.3) — regorus v0.10.1 dependency
+- 320 tests (308 unit + 12 integration) baseline — keep green
+- **NEW** cargo audit: 0 vulnerabilities (clean as of this run)
+- **NEW** Recent commits (48h): 3 commits to src/report/, 1 to src/scanner/ — no regressions
+
+## Recent Noise (ignored this run)
+
+- Dependabot PR #1247 (semver patch) — handled by dependency-sweeper when L2
+- 2x spurious "network timeout" in nuclei integration test — infra flake, not code
+
+## Post-Run Critique
+
+- High-noise items: nuclei network timeouts (infra, not actionable)
+- False positives: 0 (clippy warnings were real, test flake confirmed intermittent)
+- Items deprioritized: none this run
+- Human-review friction: none — all High Priority items have clear suggested actions
+- **One change for next cycle**: add nuclei timeout config to .apeguard.yaml to reduce infra flake noise
+
+---
+
+Run log: appended to `loop-run-log.md` on every scheduled run. See `LOOP.md` for cadence and gates.
+Kill switch: set `loop-pause-all` flag below to `true` to halt all loops.
+loop-pause-all: false

@@ -11,6 +11,7 @@ pub struct Semgrep {
 }
 
 impl Semgrep {
+    #[allow(dead_code)] // P3/P4: alternative constructor not wired; binary path via config instead
     pub fn new() -> Self {
         Semgrep {
             binary: "semgrep".to_string(),
@@ -73,7 +74,7 @@ impl Scanner for Semgrep {
 
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         #[derive(Deserialize)]
-        #[allow(dead_code)]
+        #[expect(dead_code)]
         struct SemgrepResults {
             results: Vec<SemgrepFinding>,
             #[serde(default)]
@@ -81,6 +82,7 @@ impl Scanner for Semgrep {
         }
 
         #[derive(Deserialize)]
+        #[expect(dead_code)] // P3/P4: SemgrepFinding fields from semgrep JSON; end field not consumed yet
         struct SemgrepFinding {
             check_id: String,
             path: String,
@@ -168,6 +170,7 @@ impl Scanner for Semgrep {
                     cross_refs: vec![],
                     grade: None,
                     risk_score: None,
+                    reachable: None,
                 }
             })
             .collect();
@@ -213,7 +216,9 @@ mod tests {
         }"#;
 
         let scanner = Semgrep::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("semgrep test: parse_output should succeed");
 
         assert_eq!(findings.len(), 2);
 
@@ -243,7 +248,9 @@ mod tests {
     fn test_parse_output_empty_results() {
         let json = r#"{ "results": [], "errors": [] }"#;
         let scanner = Semgrep::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("semgrep test: parse_output should succeed");
         assert!(findings.is_empty());
     }
 
@@ -260,7 +267,9 @@ mod tests {
         }"#;
 
         let scanner = Semgrep::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("semgrep test: parse_output should succeed");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::Low); // INFO → Low
     }

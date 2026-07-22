@@ -282,6 +282,7 @@ mod tests {
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         }
     }
 
@@ -467,8 +468,10 @@ mod tests {
             reasoning: "Valid finding".into(),
         };
 
-        let json = serde_json::to_string(&original).unwrap();
-        let parsed: GradeVerdict = serde_json::from_str(&json).unwrap();
+        let json =
+            serde_json::to_string(&original).expect("grade test: failed to serialize verdict");
+        let parsed: GradeVerdict =
+            serde_json::from_str(&json).expect("grade test: failed to parse JSON verdict");
 
         match parsed {
             GradeVerdict::Confirmed { confidence, .. } => {
@@ -489,7 +492,8 @@ mod tests {
         });
         assert!(finding.grade.is_some());
 
-        let json = serde_json::to_string(&finding).unwrap();
+        let json =
+            serde_json::to_string(&finding).expect("grade test: failed to serialize finding");
         assert!(
             json.contains(r#""Rejected""#),
             "Expected Rejected variant in JSON, got: {}",

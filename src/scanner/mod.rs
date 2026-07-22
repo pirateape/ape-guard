@@ -39,6 +39,7 @@ pub trait Scanner: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// The scanner type enum variant
+    #[allow(dead_code)] // P3/P4: scanner_type() defined on trait but not yet called by any consumer
     fn scanner_type(&self) -> ScannerType;
 
     /// Check if this scanner is installed and at a compatible version
@@ -80,7 +81,7 @@ pub trait Scanner: Send + Sync {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // Error variant is P3 (DAST), rest used
+#[expect(dead_code)] // Error variant is P3 (DAST), rest used
 pub enum ScannerResult {
     Complete {
         name: String,
@@ -159,11 +160,16 @@ mod tests {
 }
 
 pub mod arch;
+pub mod aws_s3;
 pub mod checkov;
 pub mod container;
 pub mod context_drift;
 pub mod dast;
 pub mod gitleaks;
+pub mod mcp_security;
 pub mod semgrep;
 pub mod syft;
+pub mod terraform;
+pub mod tls;
 pub mod trivy;
+pub mod trufflehog;

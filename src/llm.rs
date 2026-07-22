@@ -94,6 +94,35 @@ fn build_remediation_prompt(finding: &CanonicalFinding) -> String {
     )
 }
 
+/// Retries `op` up to `max_retries` times with exponential backoff.
+/// The initial attempt counts as attempt 1; `max_retries` is the number of retries
+/// after the first failure. So `max_retries=3` means up to 4 total attempts.
+async fn with_retry<R, F, Fut>(max_retries: u32, op: F) -> anyhow::Result<R>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<R>>,
+{
+    let mut remaining = max_retries.saturating_add(1); // total attempts allowed
+    let mut base_delay_ms = 500u64;
+    loop {
+        match op().await {
+            Ok(result) => return Ok(result),
+            Err(ref err) if remaining > 1 => {
+                remaining -= 1;
+                tracing::warn!(
+                    "Ollama call failed ({} attempts remaining): {} — retrying in {}ms",
+                    remaining,
+                    err,
+                    base_delay_ms
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(base_delay_ms)).await;
+                base_delay_ms = base_delay_ms.saturating_mul(2);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+}
+
 pub(crate) async fn call_ollama(
     endpoint: &str,
     model: &str,
@@ -111,22 +140,27 @@ pub(crate) async fn call_ollama(
         response: String,
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
+    with_retry(3, || async {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(anyhow::Error::msg)?;
 
-    let resp = client
-        .post(format!("{}/api/generate", endpoint))
-        .json(&OllamaRequest {
-            model,
-            prompt,
-            stream: false,
-        })
-        .send()
-        .await?;
+        let resp = client
+            .post(format!("{}/api/generate", endpoint))
+            .json(&OllamaRequest {
+                model,
+                prompt,
+                stream: false,
+            })
+            .send()
+            .await
+            .map_err(anyhow::Error::msg)?;
 
-    let body: OllamaResponse = resp.json().await?;
-    Ok(body.response)
+        let body: OllamaResponse = resp.json().await.map_err(anyhow::Error::msg)?;
+        Ok(body.response)
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -172,6 +206,7 @@ mod tests {
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         }];
         let cfg = LlmConfig {
             enabled: false,
@@ -211,6 +246,7 @@ mod tests {
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         };
         let prompt = build_remediation_prompt(&finding);
         assert!(prompt.contains("rule-1"));

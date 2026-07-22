@@ -130,6 +130,7 @@ pub struct DriftFinding {
 
 /// Configuration for a single context file's parsing
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[expect(dead_code)] // P3/P4: context file config not yet wired into config loading
 pub struct ContextFileConfig {
     /// Path to the context file relative to project root
     pub path: PathBuf,
@@ -904,7 +905,10 @@ fn verify_path_claim(claim: &ContextClaim, root: &Path) -> VerificationResult {
     // Check for backtick paths: `src/components/`
     let backtick_re = Regex::new(r"`([\w/\.\-_]+)`").expect("invalid backtick regex");
     if let Some(m) = backtick_re.captures(text) {
-        let claimed_path = m.get(1).unwrap().as_str();
+        let claimed_path = m
+            .get(1)
+            .expect("backtick_re must have capture group 1")
+            .as_str();
         let full_path = root.join(claimed_path);
 
         if full_path.exists() {
@@ -1293,7 +1297,7 @@ pub fn drift_findings_to_canonical(findings: &[DriftFinding]) -> Vec<CanonicalFi
                 scanner: ScannerType::ContextDrift,
                 scanner_version: Some("0.1.0".to_string()),
                 rule_id: format!("context-drift.{}", df.claim.category.as_str()),
-                severity: df.severity.clone(),
+                severity: df.severity,
                 confidence: df.claim.extraction_confidence.clone(),
                 title: format!(
                     "Context drift: {}",
@@ -1322,6 +1326,7 @@ pub fn drift_findings_to_canonical(findings: &[DriftFinding]) -> Vec<CanonicalFi
                 cross_refs: vec![],
                 grade: None,
                 risk_score: None,
+                reachable: None,
             }
         })
         .collect()
@@ -1343,6 +1348,7 @@ pub struct ContextDriftScanner {
 
 impl ContextDriftScanner {
     /// Create a new context drift scanner
+    // P3/P4: scanner construction uses with_binary(); new() not wired
     pub fn new(root: &Path) -> Self {
         Self {
             root: root.to_path_buf(),
@@ -1352,12 +1358,14 @@ impl ContextDriftScanner {
     }
 
     /// Set whether to include unverifiable claims in results
+    #[expect(dead_code)] // P3/P4: builder method not yet used in scan pipeline
     pub fn with_unknown(mut self, include: bool) -> Self {
         self.include_unknown = include;
         self
     }
 
     /// Set maximum findings limit
+    #[expect(dead_code)] // P3/P4: builder method not yet used in scan pipeline
     pub fn with_max_findings(mut self, max: usize) -> Self {
         self.max_findings = max;
         self
