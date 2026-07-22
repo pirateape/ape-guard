@@ -52,7 +52,7 @@ impl Scanner for TerraformScanner {
             .output()
             .await
             .ok()
-            .and_then(|o| if o.status.success() { Some(o) } else { None });
+            .filter(|o| o.status.success());
 
         if let Some(output) = output {
             return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
@@ -63,7 +63,7 @@ impl Scanner for TerraformScanner {
             .output()
             .await
             .ok()
-            .and_then(|o| if o.status.success() { Some(o) } else { None });
+            .filter(|o| o.status.success());
 
         match output {
             Some(o) => Ok(String::from_utf8_lossy(&o.stdout).trim().to_string()),

@@ -51,7 +51,7 @@ impl Scanner for McpScanner {
             .output()
             .await
             .ok()
-            .and_then(|o| if o.status.success() { Some(o) } else { None });
+            .filter(|o| o.status.success());
 
         match output {
             Some(o) => Ok(String::from_utf8_lossy(&o.stdout).trim().to_string()),
