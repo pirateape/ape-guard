@@ -29,8 +29,9 @@ jobs:
       - name: Update formula
         run: |
           cd homebrew-tap
-          # Update version and SHA256 in the formula
+          # Update version, URL and SHA256 in the formula
           sed -i "s/version \".*\"/version \"${{ github.ref_name }}\"/" Formula/apeguard.rb
+          sed -i "s|url \".*\"|url \"https://github.com/pirateape/ape-guard/archive/refs/tags/${{ github.ref_name }}.tar.gz\"|" Formula/apeguard.rb
           sed -i "s/sha256 \".*\"/sha256 \"${{ steps.get_assets.outputs.sha256 }}\"/" Formula/apeguard.rb
 
           # Also update Checkov and Syft dependencies if they're in the formula
