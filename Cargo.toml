@@ -44,7 +44,7 @@ sha2 = "0.10"
 glob = "0.3"
 thiserror = "2"
 anyhow = "1"
-regorus = "0.10.1"
+regorus = "0.11.0"
 
 [dev-dependencies]
 tempfile = "3"
