@@ -75,13 +75,13 @@ jobs:
             --output-dir ../.apeguard/reports
       - name: Upload SARIF results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: ApeGuard/.apeguard/reports/technical.sarif
           category: apeguard-layers-1-7
       - name: Upload TLS SARIF results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: ApeGuard/.apeguard/reports/technical.sarif
           category: apeguard-layers-8-12
