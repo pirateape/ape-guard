@@ -53,11 +53,13 @@ impl ScanCache {
             );",
         )?;
 
-        // Migration: add findings_snapshot column if upgrading from older schema
-        let _ = conn.execute(
+        // Migration: add findings_snapshot column (harmless to ignore — only relevant for upgrades)
+        if let Err(e) = conn.execute(
             "ALTER TABLE scan_history ADD COLUMN findings_snapshot TEXT",
             [],
-        );
+        ) {
+            tracing::debug!("Migration skipped: {}", e);
+        }
 
         Ok(ScanCache {
             conn,

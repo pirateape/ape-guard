@@ -377,11 +377,6 @@ async fn run_report(
                 None,
                 None,
             )?,
-            cli::OutputFormat::Pdf => {
-                // PDF not yet implemented, skip
-                tracing::warn!("PDF output format not yet implemented");
-                continue;
-            }
         };
         report_paths.push(path);
     }

@@ -246,10 +246,6 @@ fn generate_summary_report(
                 stride_result,
                 Some(policy_result),
             )?,
-            cli::OutputFormat::Pdf => {
-                tracing::warn!("PDF output format not yet implemented");
-                continue;
-            }
         };
         report_paths.push(path);
     }
@@ -597,6 +593,9 @@ pub(crate) async fn run_scan(
         }
     }
 
+    // Zero Trust scorecard (computed before severity filter so it reflects full findings)
+    let zt_scorecard = normalize::compute_zt_scorecard(&final_findings);
+
     // Apply severity filter
     final_findings = filter_by_severity(final_findings, severity_filter);
 
@@ -622,9 +621,6 @@ pub(crate) async fn run_scan(
         &attack_chains,
         &score::ScoreWeights::default(),
     );
-
-    // Zero Trust scorecard
-    let zt_scorecard = normalize::compute_zt_scorecard(&final_findings);
 
     // STRIDE threat model coverage
     let stride_result = if stride_flag || cfg.stride.enabled {

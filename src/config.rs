@@ -328,14 +328,17 @@ pub fn load(args: &cli::Args) -> anyhow::Result<Config> {
     Ok(cfg)
 }
 
-/// Merge a partial config into the current one (non-destructive overlay)
+/// Merge a partial config into the current one (non-destructive overlay).
 fn merge(base: &mut Config, overlay: Config) {
+    // Only override layers when the overlay provides explicitly (non-empty vector)
     if !overlay.layers.is_empty() {
         base.layers = overlay.layers;
     }
+    // Override severity only when explicitly set (non-default "all")
     if overlay.severity != "all" {
         base.severity = overlay.severity;
     }
+    // Scanner binary paths — overlay takes precedence when Some
     if overlay.binaries.gitleaks.is_some() {
         base.binaries.gitleaks = overlay.binaries.gitleaks;
     }
@@ -354,18 +357,24 @@ fn merge(base: &mut Config, overlay: Config) {
     if overlay.binaries.syft.is_some() {
         base.binaries.syft = overlay.binaries.syft;
     }
-    if overlay.cache.enabled != base.cache.enabled {
-        base.cache.enabled = overlay.cache.enabled;
-    }
-    if overlay.cache.path.as_path() != std::path::Path::new(".apeguard/cache") {
-        base.cache.path = overlay.cache.path;
-    }
-    if overlay.cache.ttl_hours != 24 {
-        base.cache.ttl_hours = overlay.cache.ttl_hours;
-    }
-    if overlay.report.formats != vec!["md"] {
-        base.report.formats = overlay.report.formats;
-    }
+    // Cache settings
+    base.cache = overlay.cache;
+    // Report settings (formats/types always taken from overlay)
+    base.report = overlay.report;
+    // LLM settings
+    base.llm = overlay.llm;
+    // Context drift settings
+    base.context_drift = overlay.context_drift;
+    // Filters
+    base.filters = overlay.filters;
+    // Reachability
+    base.reachability = overlay.reachability;
+    // STRIDE
+    base.stride = overlay.stride;
+    // Policy
+    base.policy = overlay.policy;
+    // Output directory
+    base.output_dir = overlay.output_dir;
 }
 
 /// Generate a default .apeguard.yaml config file
