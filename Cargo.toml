@@ -31,7 +31,7 @@ regex = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 
 # Templates
-tera = "1"
+tera = "2"
 
 # Logging / Output
 tracing = "0.1"
