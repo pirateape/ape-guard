@@ -1,0 +1,25 @@
+---
+type: Rust Function
+title: test_zt_three_pillars
+resource: src/score.rs#L677-L681
+visibility: private
+generated:
+  by: okf-rs/0.4.0
+relationships:
+  calls:
+  - target: functions/src/score/dimension_zt_pillars
+    resolved_by: tree-sitter
+    confidence: exact
+  - target: functions/src/score/make_finding
+    resolved_by: rust-analyzer
+    confidence: semantic
+---
+
+# Signature
+
+`fn test_zt_three_pillars()`
+
+# Calls
+
+- [dimension_zt_pillars](../../../functions/src/score/dimension_zt_pillars.md)
+- [make_finding](../../../functions/src/score/make_finding.md)

@@ -20,33 +20,60 @@ use crate::find::{
 /// Zero Trust pillar mapping rules
 /// Maps common vulnerability types to ZT pillars and maturity levels.
 const ZT_MAPPINGS: &[(&str, &str, MaturityTier)] = &[
-    // Secrets → Identity pillar
+    // Secrets → Identity
     ("secret", "identity", MaturityTier::Baseline),
     ("credential", "identity", MaturityTier::Baseline),
     ("password", "identity", MaturityTier::Baseline),
-    // SAST → Devices pillar
+    ("token", "identity", MaturityTier::Baseline),
+    ("key", "identity", MaturityTier::Baseline),
+    ("jwt", "identity", MaturityTier::Baseline),
+    // Endpoints/SAST → Devices
     ("injection", "devices", MaturityTier::Baseline),
     ("xss", "devices", MaturityTier::Advanced),
     ("rce", "devices", MaturityTier::Advanced),
-    // DAST web-app findings → Applications pillar
+    ("malware", "devices", MaturityTier::Baseline),
+    // DAST / Web → Applications
     ("sqli", "applications", MaturityTier::Baseline),
     ("sql injection", "applications", MaturityTier::Baseline),
     ("idor", "applications", MaturityTier::Advanced),
     ("csrf", "applications", MaturityTier::Baseline),
     ("ssti", "applications", MaturityTier::Advanced),
     ("open redirect", "applications", MaturityTier::Baseline),
-    // Dependency vulns → Applications pillar
     ("dependency", "applications", MaturityTier::Baseline),
     ("vulnerability", "applications", MaturityTier::Baseline),
     ("cve", "applications", MaturityTier::Baseline),
-    // Misconfig → Networks pillar
+    ("cwe", "applications", MaturityTier::Baseline),
+    // Network / Perimeter → Networks
     ("misconfig", "networks", MaturityTier::Baseline),
     ("misconfiguration", "networks", MaturityTier::Baseline),
     ("ssrf", "networks", MaturityTier::Advanced),
-    ("iac", "networks", MaturityTier::Advanced),
-    ("docker", "networks", MaturityTier::Baseline),
-    // General
-    ("cwe", "applications", MaturityTier::Baseline),
+    ("firewall", "networks", MaturityTier::Baseline),
+    ("port", "networks", MaturityTier::Baseline),
+    ("exposure", "networks", MaturityTier::Baseline),
+    // Data Security → Data
+    ("pii", "data", MaturityTier::Advanced),
+    ("phi", "data", MaturityTier::Advanced),
+    ("encryption", "data", MaturityTier::Baseline),
+    ("crypto", "data", MaturityTier::Baseline),
+    ("tls", "data", MaturityTier::Baseline),
+    ("ssl", "data", MaturityTier::Baseline),
+    ("cleartext", "data", MaturityTier::Baseline),
+    ("leak", "data", MaturityTier::Baseline),
+    // Cloud / IaC → Infrastructure
+    ("iac", "infrastructure", MaturityTier::Advanced),
+    ("docker", "infrastructure", MaturityTier::Baseline),
+    ("kubernetes", "infrastructure", MaturityTier::Advanced),
+    ("k8s", "infrastructure", MaturityTier::Advanced),
+    ("terraform", "infrastructure", MaturityTier::Advanced),
+    ("cloudformation", "infrastructure", MaturityTier::Advanced),
+    // Logging / Audit → Visibility
+    ("logging", "visibility", MaturityTier::Baseline),
+    ("audit", "visibility", MaturityTier::Baseline),
+    ("monitor", "visibility", MaturityTier::Baseline),
+    // Pipeline / CI/CD → Automation
+    ("ci/cd", "automation", MaturityTier::Advanced),
+    ("pipeline", "automation", MaturityTier::Advanced),
+    ("workflow", "automation", MaturityTier::Advanced),
 ];
 
 /// Gitleaks rule-to-severity overrides.
@@ -129,10 +156,23 @@ pub fn normalize_findings(findings: &mut [CanonicalFinding]) {
         // Apply Gitleaks severity overrides based on rule ID
         if finding.scanner == ScannerType::Gitleaks {
             let rule_lower = finding.rule_id.to_lowercase();
+            let mut matched = false;
             for (rule_pattern, severity) in GITLEAKS_SEVERITY_MAP {
                 if rule_lower.contains(rule_pattern) {
                     finding.severity = *severity;
+                    matched = true;
                     break;
+                }
+            }
+            if !matched {
+                if rule_lower.contains("key")
+                    || rule_lower.contains("token")
+                    || rule_lower.contains("secret")
+                    || rule_lower.contains("credential")
+                {
+                    finding.severity = Severity::High;
+                } else {
+                    finding.severity = Severity::Medium;
                 }
             }
         }
@@ -167,7 +207,7 @@ pub fn compute_zt_scorecard(findings: &[CanonicalFinding]) -> ZeroTrustScorecard
         "data",
         "visibility",
         "automation",
-        "analytics",
+        "infrastructure",
     ];
 
     // Track findings per pillar with severity-weighted scoring
@@ -307,108 +347,6 @@ pub fn compute_gap_analysis(
     }
 
     analysis
-}
-
-/// Generate pillar-specific remediation recommendations.
-#[allow(dead_code)] // P3/P4: pillar recommendations not yet wired into report generation
-pub fn generate_pillar_recommendations(
-    pillar: &str,
-    maturity: MaturityTier,
-    finding_count: u32,
-) -> Vec<String> {
-    let mut recs = Vec::new();
-
-    // Add maturity-aware prefix
-    let urgency = match maturity {
-        MaturityTier::Baseline => "[HIGH PRIORITY] ",
-        MaturityTier::Advanced => "",
-        MaturityTier::Adaptive => "[MAINTAIN] ",
-    };
-
-    match pillar {
-        "identity" => {
-            recs.push(format!(
-                "{}Implement credential scanning in CI/CD pipeline",
-                urgency
-            ));
-            recs.push(format!("{}Rotate hardcoded secrets regularly", urgency));
-            if finding_count > 0 {
-                recs.push(format!(
-                    "{}Address {} exposed credential finding(s)",
-                    urgency, finding_count
-                ));
-            }
-            if maturity == MaturityTier::Baseline {
-                recs.push("URGENT: Move identity security to Advanced maturity".into());
-            }
-        }
-        "devices" => {
-            recs.push(format!(
-                "{}Enable runtime code analysis in staging",
-                urgency
-            ));
-            recs.push(format!(
-                "{}Add input validation and output encoding",
-                urgency
-            ));
-            if finding_count > 0 {
-                recs.push(format!(
-                    "{}Fix {} code quality finding(s)",
-                    urgency, finding_count
-                ));
-            }
-        }
-        "networks" => {
-            recs.push(format!("{}Use IaC scanning before deployment", urgency));
-            recs.push(format!("{}Implement network segmentation", urgency));
-            if finding_count > 0 {
-                recs.push(format!(
-                    "{}Resolve {} misconfiguration finding(s)",
-                    urgency, finding_count
-                ));
-            }
-        }
-        "applications" => {
-            recs.push(format!("{}Enable automated dependency scanning", urgency));
-            recs.push(format!("{}Patch known CVEs in dependencies", urgency));
-            if finding_count > 0 {
-                recs.push(format!(
-                    "{}Update {} vulnerable dependenc(y/ies)",
-                    urgency, finding_count
-                ));
-            }
-        }
-        "data" => {
-            recs.push(format!("{}Classify data by sensitivity level", urgency));
-            recs.push(format!(
-                "{}Implement encryption at rest and in transit",
-                urgency
-            ));
-        }
-        "visibility" => {
-            recs.push(format!("{}Enable centralized logging", urgency));
-            recs.push(format!("{}Set up security monitoring dashboards", urgency));
-        }
-        "automation" => {
-            recs.push(format!("{}Automate security checks in CI/CD", urgency));
-            recs.push(format!("{}Implement policy-as-code", urgency));
-        }
-        "analytics" => {
-            recs.push(format!("{}Deploy SIEM or log analytics", urgency));
-            recs.push(format!(
-                "{}Set up automated alerting on security events",
-                urgency
-            ));
-        }
-        _ => {
-            recs.push(format!(
-                "{}Review {} finding(s) in {}",
-                urgency, finding_count, pillar
-            ));
-        }
-    }
-
-    recs
 }
 
 /// Enrich a finding with MITRE ATT&CK mapping (simplified)
@@ -687,18 +625,5 @@ mod tests {
             .expect("normalize test: identity gap analysis should exist");
         assert_eq!(identity_ga.current_maturity, MaturityTier::Baseline);
         assert_eq!(identity_ga.blocking_findings, 3);
-    }
-
-    #[test]
-    fn test_pillar_recommendations() {
-        let recs = super::generate_pillar_recommendations("identity", MaturityTier::Baseline, 3);
-        assert!(!recs.is_empty());
-        assert!(recs[0].contains("credential scanning"));
-    }
-
-    #[test]
-    fn test_recommendations_missing_findings() {
-        let recs = super::generate_pillar_recommendations("networks", MaturityTier::Adaptive, 0);
-        assert!(!recs.is_empty());
     }
 }

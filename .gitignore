@@ -44,3 +44,5 @@ STATE.md
 loop-run-log.md
 loop-ledger.json
 logs/loop-*.log
+findings.md
+.okf-cache.json
