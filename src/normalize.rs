@@ -6,74 +6,154 @@
 //   3. Compute confidence scores
 //   4. Tag findings with additional context
 //
-// The UZTF is an 8-pillar maturity model that builds on the CISA Zero Trust
+// The UZTF is a 12-pillar maturity model that builds on the CISA Zero Trust
 // Maturity Model as its foundational stepping stone. This implementation maps
-// security findings to UZTF pillars (Identity, Devices, Networks, Applications,
-// Data, Visibility, Automation, Infrastructure) and computes quantitative
-// pillar scores (0-100) and overall scorecard (0-800).
+// security findings to UZTF v2.0 pillars (Identity, Endpoints, IoT & OT,
+// Networks, Infrastructure, Applications, Supply Chain, Data, AI Systems,
+// Operations, Resilience, Governance) and computes quantitative,
+// severity-weighted pillar scores (0-100) and overall scorecard (0-1200).
 // See: https://github.com/pirateape/unified-zero-trust-framework
 use crate::find::{
-    CanonicalFinding, GapAnalysis, GapLevel, MaturityTier, PillarScore, ScannerType, Severity,
-    ZeroTrustScorecard,
+    CanonicalFinding, FindingsBySeverity, GapAnalysis, GapLevel, MaturityTier, PillarScore,
+    PostureClassification, ScannerType, Severity, ZeroTrustScorecard,
 };
 
-/// Zero Trust pillar mapping rules
-/// Maps common vulnerability types to ZT pillars and maturity levels.
-const ZT_MAPPINGS: &[(&str, &str, MaturityTier)] = &[
-    // Secrets → Identity
-    ("secret", "identity", MaturityTier::Baseline),
-    ("credential", "identity", MaturityTier::Baseline),
-    ("password", "identity", MaturityTier::Baseline),
-    ("token", "identity", MaturityTier::Baseline),
-    ("key", "identity", MaturityTier::Baseline),
-    ("jwt", "identity", MaturityTier::Baseline),
-    // Endpoints/SAST → Devices
-    ("injection", "devices", MaturityTier::Baseline),
-    ("xss", "devices", MaturityTier::Advanced),
-    ("rce", "devices", MaturityTier::Advanced),
-    ("malware", "devices", MaturityTier::Baseline),
-    // DAST / Web → Applications
-    ("sqli", "applications", MaturityTier::Baseline),
-    ("sql injection", "applications", MaturityTier::Baseline),
-    ("idor", "applications", MaturityTier::Advanced),
-    ("csrf", "applications", MaturityTier::Baseline),
-    ("ssti", "applications", MaturityTier::Advanced),
-    ("open redirect", "applications", MaturityTier::Baseline),
-    ("dependency", "applications", MaturityTier::Baseline),
-    ("vulnerability", "applications", MaturityTier::Baseline),
-    ("cve", "applications", MaturityTier::Baseline),
-    ("cwe", "applications", MaturityTier::Baseline),
+/// Zero Trust pillar mapping rules (UZTF v2.0 — 12 pillars).
+/// Maps common vulnerability types to ZT pillars. The maturity tier is derived
+/// from the severity-weighted score at scoring time, so mappings only need the
+/// keyword → pillar association.
+const ZT_MAPPINGS: &[(&str, &str)] = &[
+    // Secrets / Identity → Identity
+    ("secret", "identity"),
+    ("credential", "identity"),
+    ("password", "identity"),
+    ("token", "identity"),
+    ("key", "identity"),
+    ("jwt", "identity"),
+    ("mfa", "identity"),
+    ("sso", "identity"),
+    ("oauth", "identity"),
+    ("session", "identity"),
+    // SAST / Code quality → Endpoints
+    ("injection", "endpoints"),
+    ("xss", "endpoints"),
+    ("rce", "endpoints"),
+    ("malware", "endpoints"),
+    ("buffer", "endpoints"),
+    ("memory", "endpoints"),
+    ("traversal", "endpoints"),
+    ("deserializ", "endpoints"),
+    ("xxe", "endpoints"),
+    ("dependency", "endpoints"),
+    ("vulnerability", "endpoints"),
+    ("cve", "endpoints"),
+    ("cwe", "endpoints"),
+    ("header", "endpoints"),
+    // IoT / OT → IoT & OT Systems
+    ("iot", "iot_ot"),
+    ("ot ", "iot_ot"),
+    ("operational technology", "iot_ot"),
+    ("scada", "iot_ot"),
+    ("modbus", "iot_ot"),
+    ("plc", "iot_ot"),
+    ("unmanaged device", "iot_ot"),
+    ("vlan", "iot_ot"),
     // Network / Perimeter → Networks
-    ("misconfig", "networks", MaturityTier::Baseline),
-    ("misconfiguration", "networks", MaturityTier::Baseline),
-    ("ssrf", "networks", MaturityTier::Advanced),
-    ("firewall", "networks", MaturityTier::Baseline),
-    ("port", "networks", MaturityTier::Baseline),
-    ("exposure", "networks", MaturityTier::Baseline),
+    ("misconfig", "networks"),
+    ("misconfiguration", "networks"),
+    ("ssrf", "networks"),
+    ("firewall", "networks"),
+    ("port", "networks"),
+    ("exposure", "networks"),
+    ("dns", "networks"),
+    ("segmentation", "networks"),
+    ("vpc", "networks"),
+    // Cloud / IaC / Host → Infrastructure
+    ("iac", "infrastructure"),
+    ("docker", "infrastructure"),
+    ("kubernetes", "infrastructure"),
+    ("k8s", "infrastructure"),
+    ("terraform", "infrastructure"),
+    ("cloudformation", "infrastructure"),
+    ("iam", "infrastructure"),
+    ("container", "infrastructure"),
+    ("root", "infrastructure"),
+    ("hardening", "infrastructure"),
+    ("stig", "infrastructure"),
+    ("bucket", "infrastructure"),
+    ("rbac", "infrastructure"),
+    // Web / API → Applications
+    ("sqli", "applications"),
+    ("sql injection", "applications"),
+    ("idor", "applications"),
+    ("csrf", "applications"),
+    ("ssti", "applications"),
+    ("open redirect", "applications"),
+    ("api", "applications"),
+    ("business logic", "applications"),
+    ("auth", "applications"),
+    ("authorization", "applications"),
+    // SBOM / Vendor / Provenance → Supply Chain
+    ("sbom", "supply_chain"),
+    ("vendor", "supply_chain"),
+    ("typosquat", "supply_chain"),
+    ("provenance", "supply_chain"),
+    ("unsigned", "supply_chain"),
+    ("build pipeline", "supply_chain"),
+    ("third-party", "supply_chain"),
+    ("transitive", "supply_chain"),
+    ("ztna", "supply_chain"),
     // Data Security → Data
-    ("pii", "data", MaturityTier::Advanced),
-    ("phi", "data", MaturityTier::Advanced),
-    ("encryption", "data", MaturityTier::Baseline),
-    ("crypto", "data", MaturityTier::Baseline),
-    ("tls", "data", MaturityTier::Baseline),
-    ("ssl", "data", MaturityTier::Baseline),
-    ("cleartext", "data", MaturityTier::Baseline),
-    ("leak", "data", MaturityTier::Baseline),
-    // Cloud / IaC → Infrastructure
-    ("iac", "infrastructure", MaturityTier::Advanced),
-    ("docker", "infrastructure", MaturityTier::Baseline),
-    ("kubernetes", "infrastructure", MaturityTier::Advanced),
-    ("k8s", "infrastructure", MaturityTier::Advanced),
-    ("terraform", "infrastructure", MaturityTier::Advanced),
-    ("cloudformation", "infrastructure", MaturityTier::Advanced),
-    // Logging / Audit → Visibility
-    ("logging", "visibility", MaturityTier::Baseline),
-    ("audit", "visibility", MaturityTier::Baseline),
-    ("monitor", "visibility", MaturityTier::Baseline),
-    // Pipeline / CI/CD → Automation
-    ("ci/cd", "automation", MaturityTier::Advanced),
-    ("pipeline", "automation", MaturityTier::Advanced),
-    ("workflow", "automation", MaturityTier::Advanced),
+    ("pii", "data"),
+    ("phi", "data"),
+    ("encryption", "data"),
+    ("crypto", "data"),
+    ("tls", "data"),
+    ("ssl", "data"),
+    ("cleartext", "data"),
+    ("leak", "data"),
+    ("dlp", "data"),
+    ("classification", "data"),
+    ("retention", "data"),
+    ("exfiltration", "data"),
+    // AI / ML → AI Systems
+    ("prompt injection", "ai_systems"),
+    ("model inversion", "ai_systems"),
+    ("training data", "ai_systems"),
+    ("model access", "ai_systems"),
+    ("ai deployment", "ai_systems"),
+    ("ai output", "ai_systems"),
+    ("model supply", "ai_systems"),
+    ("llm", "ai_systems"),
+    ("ai privacy", "ai_systems"),
+    // Logging / Audit / TI → Operations
+    ("logging", "operations"),
+    ("audit", "operations"),
+    ("monitor", "operations"),
+    ("observability", "operations"),
+    ("telemetry", "operations"),
+    ("threat intelligence", "operations"),
+    ("alerting", "operations"),
+    ("tracing", "operations"),
+    ("analytics", "operations"),
+    // Backup / IR / BC → Resilience
+    ("backup", "resilience"),
+    ("recovery", "resilience"),
+    ("incident response", "resilience"),
+    ("business continuity", "resilience"),
+    ("disaster recovery", "resilience"),
+    ("isolation", "resilience"),
+    ("tabletop", "resilience"),
+    ("immutable backup", "resilience"),
+    // Training / Risk / Policy → Governance
+    ("training", "governance"),
+    ("insider threat", "governance"),
+    ("policy", "governance"),
+    ("compliance", "governance"),
+    ("risk scoring", "governance"),
+    ("awareness", "governance"),
+    ("culture", "governance"),
+    ("governance", "governance"),
 ];
 
 /// Gitleaks rule-to-severity overrides.
@@ -182,7 +262,7 @@ pub fn normalize_findings(findings: &mut [CanonicalFinding]) {
         let title_lower = finding.title.to_lowercase();
         let combined = format!("{} {}", rule_lower, title_lower);
 
-        for (keyword, pillar, _maturity) in ZT_MAPPINGS {
+        for (keyword, pillar) in ZT_MAPPINGS {
             if combined.contains(keyword) && !finding.zt_pillars.contains(&pillar.to_string()) {
                 finding.zt_pillars.push(pillar.to_string());
             }
@@ -195,62 +275,85 @@ pub fn normalize_findings(findings: &mut [CanonicalFinding]) {
     }
 }
 
+/// Severity weight for UZTF v2.0 pillar scoring (SPEC §4.1).
+fn severity_weight(sev: Severity) -> u32 {
+    match sev {
+        Severity::Critical => 20,
+        Severity::High => 15,
+        Severity::Medium => 10,
+        Severity::Low => 5,
+        Severity::Info => 1,
+    }
+}
+
+/// Derive per-pillar maturity tier from the pillar score (SPEC §4.4).
+/// Score 100 (no findings) → Adaptive; score ≥ 51 → Advanced; else Baseline.
+fn derive_maturity(score: u32) -> MaturityTier {
+    if score >= 100 {
+        MaturityTier::Adaptive
+    } else if score >= 51 {
+        MaturityTier::Advanced
+    } else {
+        MaturityTier::Baseline
+    }
+}
+
+/// Derive overall posture classification from the overall score (SPEC §4.3).
+fn derive_classification(overall: u32) -> PostureClassification {
+    if overall >= 961 {
+        PostureClassification::MostlyAdaptive
+    } else if overall >= 601 {
+        PostureClassification::MostlyAdvanced
+    } else if overall >= 241 {
+        PostureClassification::MostlyBaseline
+    } else {
+        PostureClassification::Initial
+    }
+}
+
 /// Compute a Zero Trust scorecard from normalized findings
 pub fn compute_zt_scorecard(findings: &[CanonicalFinding]) -> ZeroTrustScorecard {
     use std::collections::HashMap;
 
     let all_pillars = [
         "identity",
-        "devices",
+        "endpoints",
+        "iot_ot",
         "networks",
-        "applications",
-        "data",
-        "visibility",
-        "automation",
         "infrastructure",
+        "applications",
+        "supply_chain",
+        "data",
+        "ai_systems",
+        "operations",
+        "resilience",
+        "governance",
     ];
 
-    // Track findings per pillar with severity-weighted scoring
-    let mut pillar_severity_score: HashMap<&str, u32> = HashMap::new();
+    // Track severity-weighted deduction and finding refs per pillar
+    let mut pillar_deduction: HashMap<&str, u32> = HashMap::new();
     let mut pillar_finding_refs: HashMap<&str, Vec<&CanonicalFinding>> = HashMap::new();
 
     for finding in findings {
+        let weight = severity_weight(finding.severity);
         for pillar in &finding.zt_pillars {
-            // Severity weight: Critical=10, High=5, Medium=3, Low=1, Info=0
-            let weight = match finding.severity {
-                crate::find::Severity::Critical => 10,
-                crate::find::Severity::High => 5,
-                crate::find::Severity::Medium => 3,
-                crate::find::Severity::Low => 1,
-                crate::find::Severity::Info => 0,
-            };
-            *pillar_severity_score.entry(pillar).or_insert(0) += weight;
+            *pillar_deduction.entry(pillar).or_insert(0) += weight;
             pillar_finding_refs.entry(pillar).or_default().push(finding);
         }
     }
 
-    let mut total_gaps = 0u32;
-
     let pillar_scores: Vec<PillarScore> = all_pillars
         .iter()
         .map(|name| {
-            let severity_weight = pillar_severity_score.get(name).copied().unwrap_or(0);
+            let deduction = pillar_deduction.get(name).copied().unwrap_or(0);
+            let gap_count = pillar_finding_refs
+                .get(name)
+                .map(|refs| refs.len() as u32)
+                .unwrap_or(0);
 
-            // Severity-weighted gap count: cap at 10 to keep scoring reasonable
-            let gap_count = severity_weight.min(10);
-            total_gaps += gap_count;
-
-            // Maturity determined by severity-weighted score
-            let maturity = if severity_weight == 0 {
-                MaturityTier::Adaptive
-            } else if severity_weight <= 3 {
-                MaturityTier::Advanced
-            } else {
-                MaturityTier::Baseline
-            };
-
-            // Score: 100 - (gap_count * 10), minimum 0
-            let score = 100u32.saturating_sub(gap_count * 10);
+            // Score: 100 - severity-weighted deduction, floored at 0 (SPEC §4.1)
+            let score = 100u32.saturating_sub(deduction);
+            let maturity = derive_maturity(score);
 
             PillarScore {
                 name: name.to_string(),
@@ -267,10 +370,10 @@ pub fn compute_zt_scorecard(findings: &[CanonicalFinding]) -> ZeroTrustScorecard
         .iter()
         .filter(|p| matches!(p.maturity, MaturityTier::Advanced | MaturityTier::Adaptive))
         .count() as u32;
+    let classification = derive_classification(overall_score);
 
     // Compute gap analysis
-    let gap_analysis =
-        compute_gap_analysis(&all_pillars, &pillar_severity_score, &pillar_finding_refs);
+    let gap_analysis = compute_gap_analysis(&all_pillars, &pillar_deduction, &pillar_finding_refs);
 
     ZeroTrustScorecard {
         overall_score,
@@ -278,6 +381,7 @@ pub fn compute_zt_scorecard(findings: &[CanonicalFinding]) -> ZeroTrustScorecard
         pillars: pillar_scores,
         pillars_at_advanced_or_higher: at_advanced,
         target_maturity: MaturityTier::Advanced,
+        classification,
         gap_analysis,
     }
 }
@@ -285,36 +389,26 @@ pub fn compute_zt_scorecard(findings: &[CanonicalFinding]) -> ZeroTrustScorecard
 /// Compute detailed gap analysis for each pillar (severity-weighted).
 pub fn compute_gap_analysis(
     all_pillars: &[&str],
-    pillar_severity: &std::collections::HashMap<&str, u32>,
+    pillar_deduction: &std::collections::HashMap<&str, u32>,
     pillar_finding_refs: &std::collections::HashMap<&str, Vec<&CanonicalFinding>>,
 ) -> Vec<GapAnalysis> {
     let target = MaturityTier::Advanced;
     let mut analysis = Vec::new();
 
     for pillar_name in all_pillars {
-        let severity_weight = pillar_severity.get(*pillar_name).copied().unwrap_or(0);
+        let deduction = pillar_deduction.get(*pillar_name).copied().unwrap_or(0);
+        let score = 100u32.saturating_sub(deduction);
+        let current = derive_maturity(score);
 
-        // Determine current maturity based on severity weight
-        let current = if severity_weight == 0 {
-            MaturityTier::Adaptive
-        } else if severity_weight <= 3 {
-            MaturityTier::Advanced
-        } else {
-            MaturityTier::Baseline
-        };
-
-        // Compute gap level
+        // Compute gap level (SPEC §5.2)
         let gap = match (&current, &target) {
-            (a, b) if a == b => GapLevel::None,
-            (MaturityTier::Adaptive, _) => GapLevel::None, // Already exceeded
+            (MaturityTier::Adaptive, _) => GapLevel::None, // Exceeded target
             (MaturityTier::Advanced, MaturityTier::Advanced) => GapLevel::None,
             (MaturityTier::Baseline, MaturityTier::Advanced) => {
-                if severity_weight > 10 {
-                    GapLevel::Large
-                } else if severity_weight > 5 {
-                    GapLevel::Medium
+                if deduction >= 51 {
+                    GapLevel::Large // 2-tier gap (Baseline → Adaptive)
                 } else {
-                    GapLevel::Small
+                    GapLevel::Small // 1-tier gap (Baseline → Advanced)
                 }
             }
             _ => GapLevel::Small,
@@ -331,10 +425,30 @@ pub fn compute_gap_analysis(
             })
             .unwrap_or_default();
 
-        let blocking_count = pillar_finding_refs
-            .get(*pillar_name)
-            .map(|refs| refs.len() as u32)
-            .unwrap_or(0);
+        // Severity breakdown of blocking findings
+        let mut sev_counts = FindingsBySeverity {
+            critical: 0,
+            high: 0,
+            medium: 0,
+            low: 0,
+            info: 0,
+        };
+        if let Some(refs) = pillar_finding_refs.get(*pillar_name) {
+            for f in refs {
+                match f.severity {
+                    Severity::Critical => sev_counts.critical += 1,
+                    Severity::High => sev_counts.high += 1,
+                    Severity::Medium => sev_counts.medium += 1,
+                    Severity::Low => sev_counts.low += 1,
+                    Severity::Info => sev_counts.info += 1,
+                }
+            }
+        }
+        let blocking_count = sev_counts.critical
+            + sev_counts.high
+            + sev_counts.medium
+            + sev_counts.low
+            + sev_counts.info;
 
         analysis.push(GapAnalysis {
             pillar: pillar_name.to_string(),
@@ -342,6 +456,8 @@ pub fn compute_gap_analysis(
             target_maturity: target.clone(),
             gap,
             blocking_findings: blocking_count,
+            total_deduction: deduction,
+            findings_by_severity: sev_counts,
             recommendations,
         });
     }
@@ -432,14 +548,14 @@ mod tests {
     fn test_zt_mapping_injection() {
         let mut findings = vec![make_finding("1", "semgrep-sqli", "SQL Injection detected")];
         normalize_findings(&mut findings);
-        assert!(findings[0].zt_pillars.contains(&"devices".to_string()));
+        assert!(findings[0].zt_pillars.contains(&"endpoints".to_string()));
     }
 
     #[test]
     fn test_zt_mapping_xss() {
         let mut findings = vec![make_finding("1", "semgrep-xss", "XSS vulnerability")];
         normalize_findings(&mut findings);
-        assert!(findings[0].zt_pillars.contains(&"devices".to_string()));
+        assert!(findings[0].zt_pillars.contains(&"endpoints".to_string()));
     }
 
     #[test]
@@ -450,7 +566,7 @@ mod tests {
             "Critical vulnerability in dep",
         )];
         normalize_findings(&mut findings);
-        assert!(findings[0].zt_pillars.contains(&"applications".to_string()));
+        assert!(findings[0].zt_pillars.contains(&"endpoints".to_string()));
     }
 
     #[test]
@@ -490,8 +606,8 @@ mod tests {
     fn test_scorecard_no_findings() {
         let findings = vec![];
         let sc = compute_zt_scorecard(&findings);
-        assert_eq!(sc.overall_score, 800); // 8 pillars × 100
-        assert_eq!(sc.pillars.len(), 8);
+        assert_eq!(sc.overall_score, 1200); // 12 pillars × 100
+        assert_eq!(sc.pillars.len(), 12);
         for pillar in &sc.pillars {
             assert_eq!(pillar.score, 100);
             assert_eq!(pillar.maturity, MaturityTier::Adaptive);
@@ -509,19 +625,19 @@ mod tests {
             .iter()
             .find(|p| p.name == "identity")
             .expect("normalize test: identity pillar should exist");
-        assert!(identity.score < 100); // Should lose points
-        assert_eq!(identity.gap_count, 5); // High severity weight=5
+        assert!(identity.score < 100); // Should lose points (High weight=15)
+        assert_eq!(identity.gap_count, 1); // 1 finding
     }
 
     #[test]
-    fn test_scorecard_multiple_findings_capped() {
+    fn test_scorecard_multiple_findings() {
         let mut findings = vec![
             make_finding("1", "secret", "Secret 1"),
             make_finding("2", "secret", "Secret 2"),
             make_finding("3", "secret", "Secret 3"),
             make_finding("4", "secret", "Secret 4"),
             make_finding("5", "secret", "Secret 5"),
-            make_finding("6", "secret", "Secret 6"), // 6th adds more weight
+            make_finding("6", "secret", "Secret 6"),
         ];
         normalize_findings(&mut findings); // Sets zt_pillars for all
         let sc = compute_zt_scorecard(&findings);
@@ -530,8 +646,8 @@ mod tests {
             .iter()
             .find(|p| p.name == "identity")
             .expect("normalize test: identity pillar should exist");
-        assert_eq!(identity.gap_count, 10); // 6 High × 5 = 30, capped at 10
-        assert_eq!(identity.score, 0); // 10 gaps * 10 = 100 deduction → 0
+        assert_eq!(identity.gap_count, 6); // 6 findings
+        assert_eq!(identity.score, 10); // 6 High × 15 = 90 deduction → 10
     }
 
     #[test]
@@ -548,11 +664,12 @@ mod tests {
             .expect("normalize test: applications pillar should exist");
         assert_eq!(app.maturity, MaturityTier::Advanced);
 
-        // Multiple high severity → Baseline
+        // 4 high-severity findings → 60 deduction → score 40 → Baseline
         let mut findings = vec![
             make_finding("1", "secret", "Critical 1"),
             make_finding("2", "secret", "Critical 2"),
             make_finding("3", "secret", "Critical 3"),
+            make_finding("4", "secret", "Critical 4"),
         ];
         normalize_findings(&mut findings);
         let sc = compute_zt_scorecard(&findings);
@@ -579,8 +696,8 @@ mod tests {
             "CVE with credential leak",
         )];
         normalize_findings(&mut findings);
-        // Should map to both "applications" (lowercase cve) and "identity" (secret/credential)
-        assert!(findings[0].zt_pillars.contains(&"applications".to_string()));
+        // "cve" → endpoints, "credential" → identity, "leak" → data
+        assert!(findings[0].zt_pillars.contains(&"endpoints".to_string()));
         assert!(findings[0].zt_pillars.contains(&"identity".to_string()));
     }
 
@@ -606,7 +723,7 @@ mod tests {
             assert_eq!(ga.gap, GapLevel::None);
             assert_eq!(ga.blocking_findings, 0);
         }
-        assert_eq!(sc.gap_analysis.len(), 8);
+        assert_eq!(sc.gap_analysis.len(), 12);
     }
 
     #[test]
@@ -615,7 +732,10 @@ mod tests {
             make_finding("1", "secret-key", "AWS Secret Key"),
             make_finding("2", "secret-password", "Hardcoded Password"),
             make_finding("3", "secret-token", "API Token"),
+            make_finding("4", "secret-cred", "Client Credential"),
         ];
+        // Gitleaks override sets these to High (15 each) → 4 × 15 = 60 deduction
+        // → score 40 → Baseline
         normalize_findings(&mut findings);
         let sc = compute_zt_scorecard(&findings);
         let identity_ga = sc
@@ -624,6 +744,7 @@ mod tests {
             .find(|g| g.pillar == "identity")
             .expect("normalize test: identity gap analysis should exist");
         assert_eq!(identity_ga.current_maturity, MaturityTier::Baseline);
-        assert_eq!(identity_ga.blocking_findings, 3);
+        assert_eq!(identity_ga.blocking_findings, 4);
+        assert_eq!(identity_ga.total_deduction, 60);
     }
 }

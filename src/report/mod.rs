@@ -1091,7 +1091,8 @@ mod tests {
     use super::*;
     use crate::find::{
         CanonicalFinding, Confidence, FindingLocation, FindingsBySeverity, GapAnalysis, GapLevel,
-        MaturityTier, PillarScore, ScanSummary, ScannerType, Severity, ZeroTrustScorecard,
+        MaturityTier, PillarScore, PostureClassification, ScanSummary, ScannerType, Severity,
+        ZeroTrustScorecard,
     };
     use std::path::PathBuf;
 
@@ -1102,6 +1103,7 @@ mod tests {
             pillars: vec![],
             pillars_at_advanced_or_higher: 0,
             target_maturity: MaturityTier::Baseline,
+            classification: PostureClassification::Initial,
             gap_analysis: vec![],
         }
     }
@@ -1179,12 +1181,21 @@ mod tests {
             }],
             pillars_at_advanced_or_higher: 0,
             target_maturity: MaturityTier::Advanced,
+            classification: PostureClassification::Initial,
             gap_analysis: vec![GapAnalysis {
                 pillar: "Identity".to_string(),
                 current_maturity: MaturityTier::Baseline,
                 target_maturity: MaturityTier::Advanced,
                 gap: GapLevel::Large,
                 blocking_findings: 1,
+                total_deduction: 80,
+                findings_by_severity: FindingsBySeverity {
+                    critical: 1,
+                    high: 0,
+                    medium: 0,
+                    low: 0,
+                    info: 0,
+                },
                 recommendations: vec!["Enable MFA".to_string()],
             }],
         };

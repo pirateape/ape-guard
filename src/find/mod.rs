@@ -2,7 +2,7 @@
 // All scanner output is normalized into this structure for analysis.
 //
 // Zero Trust types in this module (ZeroTrustScorecard, PillarScore, MaturityTier,
-// GapAnalysis) implement the Unified Zero Trust Framework (UZTF) — an 8-pillar
+// GapAnalysis) implement the Unified Zero Trust Framework (UZTF) v2.0 — a 12-pillar
 // maturity model that builds on the CISA Zero Trust Maturity Model.
 // See: https://github.com/pirateape/unified-zero-trust-framework
 use serde::{Deserialize, Serialize};
@@ -188,7 +188,20 @@ pub enum Confidence {
     Certain,
 }
 
-/// Zero Trust maturity scorecard across all 8 UZTF pillars.
+/// Overall posture classification for the entire scorecard (UZTF v2.0 §4.3).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PostureClassification {
+    /// 0–240: significant gaps across all pillars
+    Initial,
+    /// 241–600: foundational controls, manual processes
+    MostlyBaseline,
+    /// 601–960: proactive posture, partial automation
+    MostlyAdvanced,
+    /// 961–1200: strong posture, real-time capabilities
+    MostlyAdaptive,
+}
+
+/// Zero Trust maturity scorecard across all 12 UZTF pillars.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZeroTrustScorecard {
     /// Total maturity score
@@ -201,6 +214,8 @@ pub struct ZeroTrustScorecard {
     pub pillars_at_advanced_or_higher: u32,
     /// Target maturity level
     pub target_maturity: MaturityTier,
+    /// Overall posture classification
+    pub classification: PostureClassification,
     /// Gaps between current and target maturity
     pub gap_analysis: Vec<GapAnalysis>,
 }
@@ -218,6 +233,10 @@ pub struct GapAnalysis {
     pub gap: GapLevel,
     /// Number of findings blocking progress
     pub blocking_findings: u32,
+    /// Total severity-weighted deduction for this pillar (UZTF v2.0 §4.1)
+    pub total_deduction: u32,
+    /// Breakdown of blocking findings by severity
+    pub findings_by_severity: FindingsBySeverity,
     /// Remediation recommendations
     pub recommendations: Vec<String>,
 }
@@ -381,13 +400,15 @@ mod tests {
     fn test_zt_scorecard_defaults() {
         let sc = ZeroTrustScorecard {
             overall_score: 75,
-            max_score: 800,
+            max_score: 1200, // 12 pillars × 100
             pillars: vec![],
             pillars_at_advanced_or_higher: 0,
             target_maturity: MaturityTier::Advanced,
+            classification: PostureClassification::MostlyBaseline,
             gap_analysis: vec![],
         };
         assert_eq!(sc.overall_score, 75);
+        assert_eq!(sc.max_score, 1200);
     }
 
     #[test]
@@ -398,11 +419,20 @@ mod tests {
             target_maturity: MaturityTier::Advanced,
             gap: GapLevel::Medium,
             blocking_findings: 4,
+            total_deduction: 75,
+            findings_by_severity: FindingsBySeverity {
+                critical: 3,
+                high: 1,
+                medium: 0,
+                low: 0,
+                info: 0,
+            },
             recommendations: vec!["Rotate secrets".into()],
         };
         assert_eq!(ga.pillar, "identity");
         assert_eq!(ga.gap, GapLevel::Medium);
         assert_eq!(ga.blocking_findings, 4);
+        assert_eq!(ga.total_deduction, 75);
     }
 
     #[test]
