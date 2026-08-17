@@ -1,6 +1,7 @@
 // Architecture Analysis Scanner
 // Discovers and parses architecture artifacts (ARCHITECTURE.md, ADRs, Mermaid diagrams)
 // Cross-references security findings with architectural components.
+#![expect(dead_code)] // P3/P4: entire module is stub implementation for Phase 3 architecture analysis
 use crate::arch::{
     assess_component_risks, ArchitectureArtifact, ArtifactType, ComponentRisk, DecisionStatus,
 };
@@ -184,6 +185,7 @@ pub fn generate_architecture_findings(artifacts: &[ArchitectureArtifact]) -> Vec
                     cross_refs: vec![],
                     grade: None,
                     risk_score: None,
+                    reachable: None,
                 });
             }
         }
@@ -235,6 +237,7 @@ fn generate_doc_findings(artifact: &ArchitectureArtifact) -> Vec<CanonicalFindin
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         });
     }
 
@@ -274,6 +277,7 @@ fn generate_doc_findings(artifact: &ArchitectureArtifact) -> Vec<CanonicalFindin
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         });
     }
 
@@ -326,6 +330,7 @@ fn generate_adr_findings(artifact: &ArchitectureArtifact) -> Vec<CanonicalFindin
                 cross_refs: vec![],
                 grade: None,
                 risk_score: None,
+                reachable: None,
             });
         }
     }
@@ -367,6 +372,7 @@ fn generate_diagram_findings(artifact: &ArchitectureArtifact) -> Vec<CanonicalFi
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         });
     }
 
@@ -403,6 +409,7 @@ fn generate_diagram_findings(artifact: &ArchitectureArtifact) -> Vec<CanonicalFi
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         });
     }
 

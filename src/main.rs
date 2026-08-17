@@ -2,25 +2,40 @@
 // One command. Three reports. Zero Trust mapped.
 //
 // Architecture: docs/03-Projects/ApeGuard/ApeGuard_Architecture.md
-#![allow(dead_code)] // P3/P4 stubs and future features
+// P3/P4 stubs and future features — applied per-module, not globally
+// e.g. #[allow(dead_code)] on specific unused pub items in arch.rs, stride.rs
 pub(crate) mod arch;
 pub(crate) mod cache;
 pub(crate) mod chain;
 mod cli;
 mod config;
 pub(crate) mod dedup;
+pub(crate) mod filter;
 pub(crate) mod find;
 pub(crate) mod grade;
 pub(crate) mod mcp;
 pub(crate) mod normalize;
+pub(crate) mod reachability;
 pub(crate) mod report;
 pub(crate) mod scanner;
 pub(crate) mod score;
+pub(crate) mod stride;
+
+pub(crate) mod orchestrate;
 
 pub(crate) mod llm;
+pub(crate) mod policy;
 
+use chrono::Utc;
 use sha2::Digest;
-use std::io::Write;
+
+macro_rules! quiet_println {
+    ($quiet:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {
+        if !$quiet {
+            println!($fmt $(, $arg)*);
+        }
+    };
+}
 
 /// Spawn a background task that cleans up child scanner processes on SIGINT/SIGTERM.
 /// Uses `pkill -P` on Unix to kill all child processes before exiting.
@@ -97,6 +112,9 @@ async fn main() -> anyhow::Result<()> {
             resume,
             grade,
             context_drift,
+            stride,
+            policy,
+            policy_dir,
             ..
         } => {
             let target = path.clone().unwrap_or_else(|| ".".to_string());
@@ -106,7 +124,7 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 fail_on
             };
-            let scan_args = ScanArgs {
+            let scan_args = orchestrate::ScanArgs {
                 target: &target,
                 layers,
                 severity,
@@ -122,8 +140,26 @@ async fn main() -> anyhow::Result<()> {
                 resume: *resume,
                 grade: *grade,
                 context_drift: *context_drift,
+                stride: *stride,
+                policy: *policy,
+                policy_dir: policy_dir.clone(),
             };
-            run_scan(scan_args, &cfg).await?;
+            let scan_output = orchestrate::run_scan(scan_args, &cfg).await?;
+            if cfg.cache.enabled {
+                let scan_id = format!("scan_{}", Utc::now().format("%Y%m%d_%H%M%S"));
+                let now = Utc::now().to_rfc3339();
+                if let Err(e) = scan_output.cache.record_scan(cache::RecordScanInput {
+                    scan_id: &scan_id,
+                    target: &target,
+                    started_at: &scan_output.started_at,
+                    completed_at: &now,
+                    total_findings: scan_output.findings.len() as u32,
+                    scanners_used: &scan_output.scanners_used,
+                    findings: &scan_output.findings,
+                }) {
+                    tracing::warn!("Failed to record scan in cache: {}", e);
+                }
+            }
         }
         cli::Command::Report {
             path,
@@ -169,602 +205,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-/// Filter findings by minimum severity threshold
-fn filter_by_severity(
-    findings: Vec<find::CanonicalFinding>,
-    filter: &cli::SeverityFilter,
-) -> Vec<find::CanonicalFinding> {
-    use find::Severity;
-
-    let min_severity = match filter {
-        cli::SeverityFilter::All => return findings, // No filtering
-        cli::SeverityFilter::Info => Severity::Info,
-        cli::SeverityFilter::Low => Severity::Low,
-        cli::SeverityFilter::Medium => Severity::Medium,
-        cli::SeverityFilter::High => Severity::High,
-        cli::SeverityFilter::Critical => Severity::Critical,
-    };
-
-    let before = findings.len();
-    let filtered: Vec<_> = findings
-        .into_iter()
-        .filter(|f| f.severity >= min_severity)
-        .collect();
-    let after = filtered.len();
-    let removed = before - after;
-
-    if removed > 0 {
-        tracing::info!(
-            "Severity filter ({:?}): removed {} findings below threshold (kept {})",
-            filter,
-            removed,
-            after
-        );
-    }
-
-    filtered
-}
-
-/// Arguments for a scan operation, grouped to avoid too-many-arguments lint
-struct ScanArgs<'a> {
-    target: &'a str,
-    layers: &'a [u8],
-    severity: &'a cli::SeverityFilter,
-    fail_on: &'a cli::FailOnThreshold,
-    output_dir: &'a str,
-    no_cache: bool,
-    quiet: bool,
-    ci: bool,
-    resume: bool,
-    grade: bool,
-    context_drift: bool,
-    formats: Vec<cli::OutputFormat>,
-    web_target: Option<String>,
-    containers: Vec<String>,
-    report_types: Vec<cli::ReportType>,
-}
-
-/// Format and print to stdout only if not in quiet mode
-macro_rules! quiet_println {
-    ($quiet:expr, $fmt:expr $(, $arg:expr)* $(,)? ) => {
-        if !$quiet {
-            println!($fmt $(, $arg)*);
-        }
-    };
-}
-
-/// Run a full security scan pipeline
-async fn run_scan(args: ScanArgs<'_>, cfg: &config::Config) -> anyhow::Result<()> {
-    let target = args.target;
-    let layers = args.layers;
-    let severity_filter = args.severity;
-    let fail_on = args.fail_on;
-    let output_dir = args.output_dir;
-    let no_cache = args.no_cache;
-    let quiet = args.quiet;
-    let ci = args.ci;
-    let resume = args.resume;
-    let grade = args.grade;
-    let formats = args.formats;
-    let web_target = args.web_target;
-    let containers = args.containers;
-    let report_types = args.report_types;
-    use crate::scanner::{
-        checkov::Checkov, container::ContainerScanner, gitleaks::Gitleaks, semgrep::Semgrep,
-        syft::Syft, trivy::Trivy, Scanner, ScannerResult,
-    };
-    use std::time::Instant;
-
-    let start = Instant::now();
-    let started_at = chrono::Utc::now().to_rfc3339();
-    let scan_id = uuid::Uuid::new_v4().to_string();
-    let target_path = PathBuf::from(target);
-    let output_path = PathBuf::from(output_dir);
-    std::fs::create_dir_all(&output_path).ok();
-
-    // Path for per-scanner streaming results (used for resume and crash recovery)
-    let findings_jsonl_path = output_path.join("found_findings.jsonl");
-
-    tracing::info!("Starting scan: {}", target);
-
-    // Initialize cache (disabled if --no-cache is set)
-    let cache = if no_cache {
-        cache::ScanCache::disabled()
-    } else if cfg.cache.enabled {
-        let cache = cache::ScanCache::open(&cfg.cache.path)?;
-        let _ = cache.enforce_ttl(cfg.cache.ttl_hours);
-        cache
-    } else {
-        cache::ScanCache::disabled()
-    };
-
-    // Collect scanners based on requested layers
-    let mut scanners: Vec<Box<dyn Scanner>> = Vec::new();
-
-    for layer in layers {
-        match layer {
-            1 => scanners.push(Box::new(Gitleaks::with_binary(
-                cfg.binaries.gitleaks.clone(),
-            ))),
-            2 => scanners.push(Box::new(Semgrep::with_binary(cfg.binaries.semgrep.clone()))),
-            3 => {
-                let bin = cfg.binaries.trivy.clone();
-                scanners.push(Box::new(Trivy::with_mode_and_binary(
-                    crate::scanner::trivy::TrivyMode::Vuln,
-                    bin.clone(),
-                )));
-                scanners.push(Box::new(Trivy::with_mode_and_binary(
-                    crate::scanner::trivy::TrivyMode::Secret,
-                    bin.clone(),
-                )));
-                scanners.push(Box::new(Trivy::with_mode_and_binary(
-                    crate::scanner::trivy::TrivyMode::Misconfig,
-                    bin,
-                )));
-            }
-            4 => {
-                // Container image scanning
-                for image in &containers {
-                    scanners.push(Box::new(ContainerScanner::new(image)));
-                }
-            }
-            5 => {
-                // DAST scanning — requires a web target
-                if let Some(url) = &web_target {
-                    scanners.push(Box::new(crate::scanner::dast::DastScanner::new(url)));
-                }
-            }
-            6 => {
-                // IaC scanning via Checkov
-                scanners.push(Box::new(Checkov::with_binary(cfg.binaries.checkov.clone())));
-            }
-            7 => {
-                // SBOM inventory via Syft
-                scanners.push(Box::new(Syft::with_binary(cfg.binaries.syft.clone())));
-            }
-            _ => tracing::warn!("Unknown layer: {}", layer),
-        }
-    }
-
-    // Warn if --web provided but layer 5 not selected
-    if let Some(url) = &web_target {
-        if !layers.contains(&5) {
-            tracing::warn!(
-                "--web target '{}' provided but no DAST layer (5) selected. \
-                 Use --layers 5 to enable DAST scanning.",
-                url
-            );
-        }
-    }
-
-    // Resume: check for existing findings JSONL and skip completed scanners
-    if resume {
-        match load_completed_scanners(&findings_jsonl_path) {
-            Ok(completed) if !completed.is_empty() => {
-                tracing::info!(
-                    "Resume mode: {} scanners already completed: {:?}",
-                    completed.len(),
-                    completed
-                );
-                scanners.retain(|s| !completed.contains(s.name()));
-                if scanners.is_empty() {
-                    tracing::info!("All requested layers already completed — regenerating report from existing data.");
-                }
-            }
-            Ok(_) => {
-                tracing::info!(
-                    "Resume mode: no previous scanner results found, running all layers."
-                );
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "Resume mode: could not read previous results ({}), running all layers.",
-                    e
-                );
-            }
-        }
-    }
-
-    // Run each scanner in parallel
-    let mut all_findings: Vec<find::CanonicalFinding> = Vec::new();
-    let mut scanners_used: Vec<String> = Vec::new();
-
-    use futures::future::join_all;
-    let scan_results = join_all(scanners.iter().map(|s| {
-        let name = s.name();
-        tracing::info!("Running scanner: {}", name);
-        async {
-            let result = s.scan(&target_path).await;
-            (name.to_string(), result)
-        }
-    }))
-    .await;
-
-    for (name, result) in scan_results {
-        scanners_used.push(name.clone());
-        let (status, finding_count) = match &result {
-            Ok(ScannerResult::Complete { findings, .. }) => {
-                tracing::info!("  {}: {} findings", name, findings.len());
-                ("complete", findings.len())
-            }
-            Ok(ScannerResult::NotInstalled { .. }) => {
-                tracing::warn!("  {}: not installed", name);
-                ("skipped", 0)
-            }
-            Ok(ScannerResult::Error { error, .. }) => {
-                tracing::error!("  {}: error - {}", name, error);
-                ("error", 0)
-            }
-            Err(e) => {
-                tracing::error!("  {}: failed - {}", name, e);
-                ("error", 0)
-            }
-        };
-
-        // Stream result to found_findings.jsonl immediately
-        if let Ok(mut file) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&findings_jsonl_path)
-        {
-            let entry = serde_json::json!({
-                "scanner": name,
-                "status": status,
-                "finding_count": finding_count,
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-            });
-            let _ = writeln!(file, "{}", entry);
-        }
-
-        match result {
-            Ok(ScannerResult::Complete { findings, .. }) => {
-                all_findings.extend(findings);
-            }
-            Ok(ScannerResult::NotInstalled { name, hint }) => {
-                tracing::warn!("  {}: not installed ({})", name, hint);
-            }
-            Ok(ScannerResult::Error { name, error }) => {
-                tracing::error!("  {}: error - {}", name, error);
-            }
-            Err(e) => {
-                tracing::error!("  {}: failed - {}", name, e);
-            }
-        }
-    }
-
-    // Context Drift Detection (Layer 8) — optional, requires --context-drift flag
-    // Verifies claims in AGENTS.md, CLAUDE.md, .cursor/rules against actual codebase state
-    if args.context_drift {
-        let drift_scanner = scanner::context_drift::ContextDriftScanner::new(&target_path);
-        let drift_result = drift_scanner.scan_drift();
-
-        match drift_result {
-            scanner::context_drift::DriftScanResult::Complete {
-                context_file_count,
-                total_claims,
-                drift_findings,
-                drift_counts,
-            } => {
-                let canonical =
-                    scanner::context_drift::drift_findings_to_canonical(&drift_findings);
-                let drift_count = canonical.len();
-
-                if drift_count > 0 {
-                    tracing::info!(
-                        "Context drift: {} files, {} claims, {} drifts (C:{}, H:{}, M:{}, L:{}, I:{})",
-                        context_file_count,
-                        total_claims,
-                        drift_count,
-                        drift_counts.critical,
-                        drift_counts.high,
-                        drift_counts.medium,
-                        drift_counts.low,
-                        drift_counts.info,
-                    );
-                } else if total_claims > 0 {
-                    tracing::info!(
-                        "Context drift: {} files, {} claims verified — no drift detected",
-                        context_file_count,
-                        total_claims,
-                    );
-                } else {
-                    tracing::info!(
-                        "Context drift: {} context files found but no extractable claims",
-                        context_file_count,
-                    );
-                }
-
-                all_findings.extend(canonical);
-            }
-            scanner::context_drift::DriftScanResult::NoContextFiles => {
-                tracing::info!(
-                    "Context drift: no AGENTS.md, CLAUDE.md, or .cursor/rules files found"
-                );
-            }
-            scanner::context_drift::DriftScanResult::NoClaims => {
-                tracing::info!(
-                    "Context drift: context files found but no claims could be extracted"
-                );
-            }
-        }
-    }
-
-    // Normalize and deduplicate
-    normalize::normalize_findings(&mut all_findings);
-    dedup::cross_reference(&mut all_findings);
-    let mut final_findings = dedup::deduplicate(all_findings);
-
-    // LLM remediation enhancement — gracefully skips if Ollama is not running
-    let llm_cfg = llm::LlmConfig {
-        endpoint: cfg.llm.endpoint.clone(),
-        model: cfg.llm.model.clone(),
-        enabled: cfg.llm.enabled,
-    };
-    match llm::enhance_remediations(&mut final_findings, &llm_cfg).await {
-        Ok(n) if n > 0 => tracing::info!("LLM enhanced {} finding remediations via Ollama", n),
-        Ok(_) => {}
-        Err(e) => tracing::debug!("LLM enhancement skipped: {}", e),
-    }
-
-    // Adversarial grading — optional LLM verification step
-    // Reuses the same Ollama endpoint as remediation but with an adversarial "prove FP" frame
-    if grade {
-        let grade_count =
-            grade::grade_findings(&mut final_findings, &cfg.llm.endpoint, &cfg.llm.model).await?;
-        if grade_count > 0 {
-            let counts = grade::count_verdicts(&final_findings);
-            tracing::info!(
-                "Graded {} findings via adversarial verification ({} confirmed, {} rejected, {} needs review)",
-                grade_count,
-                counts.confirmed,
-                counts.rejected,
-                counts.needs_review,
-            );
-        }
-    }
-
-    // Apply severity filter
-    let mut final_findings = filter_by_severity(final_findings, severity_filter);
-
-    // Check fail-on threshold for CI exit codes
-    let fail_threshold_reached = check_fail_on(&final_findings, fail_on);
-
-    // Build attack chains
-    let attack_chains = chain::build_attack_chains(&final_findings);
-
-    // Compute risk scores for all findings (deterministic, always runs)
-    score::score_all_findings(
-        &mut final_findings,
-        &attack_chains,
-        &score::ScoreWeights::default(),
-    );
-
-    // Compute Zero Trust scorecard
-    let zt_scorecard = normalize::compute_zt_scorecard(&final_findings);
-
-    // Build scan summary (before arch analysis — arch adds optional data)
-    let duration = start.elapsed().as_secs_f64();
-    let mut by_sev = find::FindingsBySeverity {
-        critical: 0,
-        high: 0,
-        medium: 0,
-        low: 0,
-        info: 0,
-    };
-    for f in &final_findings {
-        match f.severity {
-            find::Severity::Critical => by_sev.critical += 1,
-            find::Severity::High => by_sev.high += 1,
-            find::Severity::Medium => by_sev.medium += 1,
-            find::Severity::Low => by_sev.low += 1,
-            find::Severity::Info => by_sev.info += 1,
-        }
-    }
-
-    let total = final_findings.len();
-    let (c_sev, h_sev, m_sev, l_sev, i_sev) = (
-        by_sev.critical,
-        by_sev.high,
-        by_sev.medium,
-        by_sev.low,
-        by_sev.info,
-    );
-
-    let chain_count = attack_chains.len();
-
-    // Discover architecture artifacts and assess component risks
-    let arch_artifacts = crate::arch::discover_artifacts(&target_path);
-    let component_risks = if !arch_artifacts.is_empty() {
-        Some(crate::arch::assess_component_risks(
-            &final_findings,
-            &arch_artifacts,
-        ))
-    } else {
-        None
-    };
-    let arch_diagram = component_risks.as_ref().and_then(|risks| {
-        if !arch_artifacts.is_empty() {
-            Some(crate::arch::generate_mermaid_diagram(
-                &arch_artifacts,
-                risks,
-            ))
-        } else {
-            None
-        }
-    });
-
-    let summary = find::ScanSummary {
-        scan_id: scan_id.clone(),
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        target: target.to_string(),
-        target_hash: format!("{:x}", sha2::Sha256::digest(target.as_bytes())),
-        duration_seconds: duration,
-        total_findings: total as u32,
-        findings_by_severity: by_sev,
-        scanners_used: scanners_used.clone(),
-        zt_scorecard: Some(zt_scorecard.clone()),
-        attack_chains,
-    };
-
-    // Record scan in cache (with findings snapshot for report regeneration)
-    let completed_at = chrono::Utc::now().to_rfc3339();
-    cache.record_scan(cache::RecordScanInput {
-        scan_id: &scan_id,
-        target,
-        started_at: &started_at,
-        completed_at: &completed_at,
-        total_findings: final_findings.len() as u32,
-        scanners_used: &scanners_used,
-        findings: &final_findings,
-    })?;
-
-    // Convert CLI report-type flags to report module enum
-    let selected_report_types: Vec<report::ReportType> = report_types
-        .iter()
-        .map(|r| match r {
-            cli::ReportType::Tech => report::ReportType::Technical,
-            cli::ReportType::Exec => report::ReportType::Executive,
-            cli::ReportType::Roadmap => report::ReportType::Roadmap,
-        })
-        .collect();
-
-    // Generate reports
-    let mut report_paths = report::generate_all_reports(
-        &summary,
-        &final_findings,
-        &zt_scorecard,
-        &output_path,
-        arch_diagram.as_deref(),
-        &selected_report_types,
-    )?;
-
-    // Generate additional output formats
-    for fmt in &formats {
-        let path = match fmt {
-            cli::OutputFormat::Md => continue, // Already generated
-            cli::OutputFormat::Json => report::generate_json_report(
-                &summary,
-                &final_findings,
-                &zt_scorecard,
-                &output_path,
-                arch_diagram.as_deref(),
-            )?,
-            cli::OutputFormat::Sarif => report::generate_sarif_report(
-                &summary,
-                &final_findings,
-                &zt_scorecard,
-                &output_path,
-                arch_diagram.as_deref(),
-            )?,
-            cli::OutputFormat::Html => report::generate_html_report(
-                &summary,
-                &final_findings,
-                &zt_scorecard,
-                &output_path,
-                arch_diagram.as_deref(),
-            )?,
-            cli::OutputFormat::Pdf => {
-                // PDF not yet implemented, skip
-                tracing::warn!("PDF output format not yet implemented");
-                continue;
-            }
-        };
-        report_paths.push(path);
-    }
-
-    // Print results summary
-    quiet_println!(quiet, "");
-    quiet_println!(quiet, "═══ ApeGuard Scan Complete ═══");
-    quiet_println!(quiet, "  Target:  {}", target);
-    quiet_println!(quiet, "  Duration: {:.1}s", duration);
-    quiet_println!(
-        quiet,
-        "  Findings: {} (C:{}, H:{}, M:{}, L:{}, I:{})",
-        total,
-        c_sev,
-        h_sev,
-        m_sev,
-        l_sev,
-        i_sev
-    );
-    quiet_println!(quiet, "  Attack Chains: {}", chain_count);
-    quiet_println!(quiet, "  Reports:");
-    for p in &report_paths {
-        quiet_println!(quiet, "    📋 {}", p.display());
-    }
-    quiet_println!(quiet, "");
-
-    // Enforce --fail-on threshold for CI exit codes
-    if fail_threshold_reached {
-        if ci {
-            // CI mode: clean exit code without error message
-            if !quiet {
-                eprintln!(
-                    "FAILED: findings at or above '{}' threshold",
-                    match fail_on {
-                        cli::FailOnThreshold::Critical => "critical",
-                        cli::FailOnThreshold::High => "high",
-                        cli::FailOnThreshold::Never => unreachable!(),
-                    }
-                );
-            }
-            std::process::exit(1);
-        } else {
-            anyhow::bail!(
-                "❌ Fail-on threshold '{}' reached — found findings at or above this severity",
-                match fail_on {
-                    cli::FailOnThreshold::Critical => "critical",
-                    cli::FailOnThreshold::High => "high",
-                    cli::FailOnThreshold::Never => unreachable!(),
-                }
-            );
-        }
-    }
-
-    Ok(())
-}
-
-/// Check if findings exceed the fail-on threshold
-fn check_fail_on(findings: &[find::CanonicalFinding], threshold: &cli::FailOnThreshold) -> bool {
-    match threshold {
-        cli::FailOnThreshold::Never => false,
-        cli::FailOnThreshold::High => findings
-            .iter()
-            .any(|f| matches!(f.severity, find::Severity::High | find::Severity::Critical)),
-        cli::FailOnThreshold::Critical => findings
-            .iter()
-            .any(|f| matches!(f.severity, find::Severity::Critical)),
-    }
-}
-
-/// Read found_findings.jsonl and return the set of scanner names that completed successfully.
-fn load_completed_scanners(
-    path: &std::path::Path,
-) -> anyhow::Result<std::collections::HashSet<String>> {
-    if !path.exists() {
-        return Ok(std::collections::HashSet::new());
-    }
-
-    let content = std::fs::read_to_string(path)?;
-    let mut completed = std::collections::HashSet::new();
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) {
-            if entry["status"] == "complete" {
-                if let Some(scanner) = entry["scanner"].as_str() {
-                    completed.insert(scanner.to_string());
-                }
-            }
-        }
-    }
-
-    Ok(completed)
 }
 
 /// Regenerate reports from cached scan
@@ -902,6 +342,8 @@ async fn run_report(
         &output_path,
         arch_diagram.as_deref(),
         &selected_report_types,
+        None, // stride_result not available during report regeneration
+        None, // policy_result not available during report regeneration
     )?;
 
     // Generate additional output formats
@@ -914,6 +356,8 @@ async fn run_report(
                 &zt_scorecard,
                 &output_path,
                 arch_diagram.as_deref(),
+                None,
+                None,
             )?,
             cli::OutputFormat::Sarif => report::generate_sarif_report(
                 &summary,
@@ -921,6 +365,8 @@ async fn run_report(
                 &zt_scorecard,
                 &output_path,
                 arch_diagram.as_deref(),
+                None,
+                None,
             )?,
             cli::OutputFormat::Html => report::generate_html_report(
                 &summary,
@@ -928,12 +374,9 @@ async fn run_report(
                 &zt_scorecard,
                 &output_path,
                 arch_diagram.as_deref(),
+                None,
+                None,
             )?,
-            cli::OutputFormat::Pdf => {
-                // PDF not yet implemented, skip
-                tracing::warn!("PDF output format not yet implemented");
-                continue;
-            }
         };
         report_paths.push(path);
     }

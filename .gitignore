@@ -37,3 +37,10 @@ entities.json
 # Pre-commit cache
 .prettier-cache
 .eslint-cache
+
+# Loop Engineering state — live, machine-written, not for public commits
+# (Uncomment to keep loop state local; comment to commit run history for audits)
+STATE.md
+loop-run-log.md
+loop-ledger.json
+logs/loop-*.log

@@ -11,6 +11,7 @@ pub struct Checkov {
 }
 
 impl Checkov {
+    #[allow(dead_code)] // P3/P4: alternative constructor not wired; binary path via config instead
     pub fn new() -> Self {
         Checkov {
             binary: "checkov".to_string(),
@@ -177,6 +178,7 @@ impl Scanner for Checkov {
                     cross_refs: vec![],
                     grade: None,
                     risk_score: None,
+                    reachable: None,
                 }
             })
             .collect();
@@ -219,7 +221,9 @@ mod tests {
         }"#;
 
         let scanner = Checkov::new();
-        let findings = scanner.parse_output(json.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_output(json.as_bytes())
+            .expect("checkov test: parse_output should succeed");
 
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].scanner, ScannerType::Checkov);
@@ -238,7 +242,7 @@ mod tests {
         let scanner = Checkov::new();
         let findings = scanner
             .parse_output(br#"{"results":{"failed_checks":[]}}"#)
-            .unwrap();
+            .expect("checkov test: parse_output empty should succeed");
         assert!(findings.is_empty());
     }
 }

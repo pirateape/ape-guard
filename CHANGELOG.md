@@ -2,7 +2,29 @@
 
 All notable changes to ApeGuard are documented here.
 
-## [Unreleased]
+## [0.5.2] — 2026-07-22
+
+### Fixed
+
+- **MCP protocol version rejection** — `handle_initialize` was hard-rejecting protocol versions != "2025-03-26" with `-32603` error. Now accepts both "2025-11-25" and "2025-03-26", responding with the supported version per spec.
+- **MCP scan tool truncated to layers 1-7** — Extended layer matching to cover all 12 layers including Trufflehog, Context Drift, MCP Security, Terraform, AWS S3, and TLS Certificate.
+- **CLI scan never recorded to cache** — `run_scan()` returned a `cache` field in `ScanOutput` but `main.rs` discarded it. Added `cache.record_scan()` call after scan completion, fixing `apeguard report` always returning "No cached scans found".
+- **Removed unused imports** in 4 scanner test modules; fixed clippy `needless_borrows_for_generic_args` in tls.rs.
+- Build: 336 tests (324 unit + 12 int), 0 clippy warnings, 0 format issues.
+
+## [0.5.1] — 2026-07-05
+
+### Fixed
+
+- **5 production issues from ALG audit** — Resolved all items from the Anchored Learning Graph review:
+  - Replaced 5 `unwrap()` calls with descriptive `.expect()` in reachability, report, context_drift, and cache modules.
+  - Converted 39 `#[allow]` attributes to `#[expect]` (Rust 2024 convention); reverted 15 unfulfilled expectations back to `#[allow]`.
+  - Fixed 2 failing TruffleHog unit tests by stripping security-pragma comments before JSON parsing.
+  - Added `///` doc-comments to ~27 public items across arch/graph, cache, scoring, and finding modules.
+  - Optimized BFS hot loop in reachability analysis using `Rc<PathBuf>` to eliminate redundant path data cloning.
+  - Build: 308 unit tests, 0 clippy warnings, 0 format issues across 16 files.
+
+## [0.5.0] — 2026-06-23
 
 ## [0.5.0] — 2026-06-23
 

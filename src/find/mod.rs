@@ -8,6 +8,10 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Normalized finding produced by any scanner.
+///
+/// All scanner output is converted into this canonical structure
+/// for unified analysis, deduplication, scoring, and reporting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CanonicalFinding {
     pub id: String,
@@ -29,25 +33,39 @@ pub struct CanonicalFinding {
     pub cross_refs: Vec<CrossReference>,
     pub grade: Option<GradeVerdict>,
     pub risk_score: Option<UnifiedRiskScore>,
+    /// Whether the finding's source file is transitively reachable from an entry point.
+    /// `None` = not yet analyzed, `Some(true)` = reachable, `Some(false)` = unreachable (dead code).
+    #[serde(default)]
+    pub reachable: Option<bool>,
 }
 
+/// Location of a finding within the target codebase.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FindingLocation {
+    /// File path where the finding was detected
     pub file: PathBuf,
+    /// Line number within the file
     pub line: Option<u32>,
+    /// Column within the line
     pub column: Option<u32>,
+    /// Git commit hash (for git-sourced findings)
     pub commit: Option<String>,
+    /// Author of the commit
     pub author: Option<String>,
+    /// Code snippet around the finding
     pub snippet: Option<String>,
 }
 
+/// Links a finding to a corresponding finding from another scanner.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossReference {
+    /// The scanner that produced the related finding
     pub scanner: ScannerType,
+    /// Rule ID of the related finding
     pub rule_id: String,
 }
 
-/// Why a finding was rejected by the adversarial grader
+/** Reason a finding was rejected by the adversarial AI grader. */
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RejectReason {
     TestCode,
@@ -57,7 +75,7 @@ pub enum RejectReason {
     SeverityInflated,
 }
 
-/// Verdict from the adversarial verification grader
+/** Verdict from the adversarial AI verification grader. */
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GradeVerdict {
     Confirmed {
@@ -96,9 +114,11 @@ pub struct UnifiedRiskScore {
     pub score_confidence: f32,
 }
 
+/// Identifies which scanner produced a finding.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ScannerType {
     Gitleaks,
+    Trufflehog,
     Semgrep,
     TrivyVuln,
     TrivySecret,
@@ -110,6 +130,10 @@ pub enum ScannerType {
     Zap,
     Architecture,
     ContextDrift,
+    McpSecurity,    // Layer 9: MCP security scanning
+    TerraformIaC,   // Layer 10: Terraform IaC scanning
+    AwsS3,          // Layer 11: AWS S3 bucket permission scanning
+    TlsCertificate, // Layer 12: TLS certificate auditing
     Custom(String),
 }
 
@@ -117,6 +141,7 @@ impl std::fmt::Display for ScannerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ScannerType::Gitleaks => write!(f, "Gitleaks"),
+            ScannerType::Trufflehog => write!(f, "TruffleHog"),
             ScannerType::Semgrep => write!(f, "Semgrep"),
             ScannerType::TrivyVuln => write!(f, "Trivy"),
             ScannerType::TrivySecret => write!(f, "Trivy"),
@@ -128,100 +153,166 @@ impl std::fmt::Display for ScannerType {
             ScannerType::Zap => write!(f, "ZAP"),
             ScannerType::Architecture => write!(f, "Architecture"),
             ScannerType::ContextDrift => write!(f, "ContextDrift"),
+            ScannerType::McpSecurity => write!(f, "McpSecurity"),
+            ScannerType::TerraformIaC => write!(f, "TerraformIaC"),
+            ScannerType::AwsS3 => write!(f, "AwsS3"),
+            ScannerType::TlsCertificate => write!(f, "TlsCertificate"),
             ScannerType::Custom(name) => write!(f, "{}", name),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
+/// Security severity level for a finding.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum Severity {
+    /// Informational — no direct security impact
     Info,
+    /// Low severity — minor issue
     Low,
+    /// Medium severity — moderate risk
     Medium,
+    /// High severity — significant risk
     High,
+    /// Critical severity — immediate action required
     Critical,
 }
 
+/// Confidence level in the accuracy of a finding.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Confidence {
+    /// Low confidence — possible false positive
     Tentative,
+    /// Moderate confidence — likely correct
     Firm,
+    /// High confidence — verified or unambiguous
     Certain,
 }
 
+/// Zero Trust maturity scorecard across all 8 UZTF pillars.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZeroTrustScorecard {
+    /// Total maturity score
     pub overall_score: u32,
+    /// Maximum possible score
     pub max_score: u32,
+    /// Per-pillar scores
     pub pillars: Vec<PillarScore>,
+    /// Pillars at Advanced or Adaptive maturity
     pub pillars_at_advanced_or_higher: u32,
+    /// Target maturity level
     pub target_maturity: MaturityTier,
+    /// Gaps between current and target maturity
     pub gap_analysis: Vec<GapAnalysis>,
 }
 
+/// Identifies a maturity gap for a single ZT pillar.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GapAnalysis {
+    /// ZT pillar name
     pub pillar: String,
+    /// Current measured maturity
     pub current_maturity: MaturityTier,
+    /// Target maturity level
     pub target_maturity: MaturityTier,
+    /// Severity of the gap
     pub gap: GapLevel,
+    /// Number of findings blocking progress
     pub blocking_findings: u32,
+    /// Remediation recommendations
     pub recommendations: Vec<String>,
 }
 
+/// Severity of a maturity gap.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum GapLevel {
+    /// No gap — target met
     None,
+    /// Minor gap, easy to close
     Small,
+    /// Moderate gap
     Medium,
+    /// Significant gap requiring substantial effort
     Large,
 }
 
+/// Score and maturity level for a single ZT pillar.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PillarScore {
+    /// ZT pillar name
     pub name: String,
+    /// Current maturity tier
     pub maturity: MaturityTier,
+    /// Number of open gaps for this pillar
     pub gap_count: u32,
+    /// Numeric score (0-100)
     pub score: u32,
 }
 
+/// Maturity level in the Unified Zero Trust Framework.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MaturityTier {
+    /// Initial stage — minimal controls in place
     Baseline,
+    /// Intermediate stage — proactive monitoring and enforcement
     Advanced,
+    /// Highest stage — real-time adaptation and automation
     Adaptive,
 }
 
+/// A chain of findings that together form an attack path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttackChain {
+    /// Unique chain identifier
     pub id: String,
+    /// Aggregated risk score for this chain
     pub risk_score: f32,
+    /// Human-readable description of the attack path
     pub description: String,
+    /// Ordered steps in the attack chain
     pub steps: Vec<String>,
+    /// Finding IDs that comprise this chain
     pub finding_ids: Vec<String>,
+    /// Remediation recommendation
     pub recommendation: String,
 }
 
+/// Summary of a complete scan run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanSummary {
+    /// Unique scan identifier
     pub scan_id: String,
+    /// ISO-8601 timestamp of scan start
     pub timestamp: String,
+    /// Target that was scanned
     pub target: String,
+    /// Hash of the target path/configuration
     pub target_hash: String,
+    /// Total scan duration in seconds
     pub duration_seconds: f64,
+    /// Total number of findings
     pub total_findings: u32,
+    /// Breakdown of findings by severity
     pub findings_by_severity: FindingsBySeverity,
+    /// Names of scanners used
     pub scanners_used: Vec<String>,
+    /// Zero Trust scorecard (if enabled)
     pub zt_scorecard: Option<ZeroTrustScorecard>,
+    /// Attack chains identified
     pub attack_chains: Vec<AttackChain>,
 }
 
+/// Count of findings grouped by severity level.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FindingsBySeverity {
+    /// Number of critical-severity findings
     pub critical: u32,
+    /// Number of high-severity findings
     pub high: u32,
+    /// Number of medium-severity findings
     pub medium: u32,
+    /// Number of low-severity findings
     pub low: u32,
+    /// Number of informational findings
     pub info: u32,
 }
 
@@ -266,6 +357,7 @@ mod tests {
             cross_refs: vec![],
             grade: None,
             risk_score: None,
+            reachable: None,
         };
         assert_eq!(f.id, "test-1");
         assert!(f.location.file.ends_with("test.py"));

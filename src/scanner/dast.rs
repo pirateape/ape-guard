@@ -73,6 +73,7 @@ impl Scanner for DastScanner {
 impl DastScanner {
     fn parse_nuclei_json(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         #[derive(Deserialize)]
+        #[expect(dead_code)] // P3/P4: NucleiResult fields from nuclei JSON; not all fields consumed yet
         struct NucleiResult {
             #[serde(default)]
             template_id: String,
@@ -231,6 +232,7 @@ impl DastScanner {
                 cross_refs: vec![],
                 grade: None,
                 risk_score: None,
+                reachable: None,
             });
         }
 
@@ -249,7 +251,9 @@ mod tests {
 {"template_id":"technologies/tech-detect","host":"https://example.com","matched_at":"https://example.com/","name":"Nginx Detected","severity":"info","tags":["tech","nginx"]}"#;
 
         let scanner = DastScanner::new("https://example.com");
-        let findings = scanner.parse_nuclei_json(jsonl.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_nuclei_json(jsonl.as_bytes())
+            .expect("dast test: parse_nuclei_json should succeed");
 
         assert_eq!(findings.len(), 2);
 
@@ -260,7 +264,11 @@ mod tests {
         assert_eq!(f1.title, "SQL Injection in /admin");
         assert_eq!(f1.cwe.as_deref(), Some("CWE-89"));
         assert_eq!(f1.cvss, Some(9.8f32));
-        assert!(f1.remediation.as_ref().unwrap().contains("parameterized"));
+        assert!(f1
+            .remediation
+            .as_ref()
+            .expect("dast test: f1 should have remediation")
+            .contains("parameterized"));
         assert_eq!(
             f1.location.snippet.as_deref(),
             Some("https://example.com/admin")
@@ -277,7 +285,9 @@ mod tests {
     #[test]
     fn test_parse_nuclei_json_empty() {
         let scanner = DastScanner::new("https://example.com");
-        let findings = scanner.parse_nuclei_json(b"").unwrap();
+        let findings = scanner
+            .parse_nuclei_json(b"")
+            .expect("dast test: parse_nuclei_json empty should succeed");
         assert!(findings.is_empty());
     }
 
@@ -285,7 +295,9 @@ mod tests {
     fn test_parse_nuclei_json_skips_malformed_lines() {
         let jsonl = "{\"template_id\":\"good\",\"host\":\"h\"}\nnot-json\n{\"template_id\":\"also-good\",\"host\":\"h\"}\n";
         let scanner = DastScanner::new("https://example.com");
-        let findings = scanner.parse_nuclei_json(jsonl.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_nuclei_json(jsonl.as_bytes())
+            .expect("dast test: parse_nuclei_json should succeed");
         assert_eq!(findings.len(), 2); // malformed line silently skipped
     }
 
@@ -294,7 +306,9 @@ mod tests {
         let jsonl = r#"{"template_id":"test","host":"h","info":{"severity":"high","name":"Test"}}
 "#;
         let scanner = DastScanner::new("https://example.com");
-        let findings = scanner.parse_nuclei_json(jsonl.as_bytes()).unwrap();
+        let findings = scanner
+            .parse_nuclei_json(jsonl.as_bytes())
+            .expect("dast test: parse_nuclei_json should succeed");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::High);
     }
