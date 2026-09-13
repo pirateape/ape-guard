@@ -156,6 +156,7 @@ async fn main() -> anyhow::Result<()> {
                     total_findings: scan_output.findings.len() as u32,
                     scanners_used: &scan_output.scanners_used,
                     findings: &scan_output.findings,
+                    store_findings: cfg.cache.store_findings,
                 }) {
                     tracing::warn!("Failed to record scan in cache: {}", e);
                 }

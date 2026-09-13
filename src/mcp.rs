@@ -482,6 +482,7 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
             total_findings: deduped.len() as u32,
             scanners_used: &scanners_used,
             findings: &deduped,
+            store_findings: true,
         });
     }
 

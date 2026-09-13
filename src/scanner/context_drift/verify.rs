@@ -3,6 +3,7 @@
 use super::discover::{path_pattern, read_file, technology_keyword_pattern, version_pattern};
 use super::types::{ClaimCategory, ContextClaim, DriftFinding, VerificationResult};
 use crate::find::{CanonicalFinding, FindingLocation, ScannerType, Severity};
+use crate::scanner::generate_finding_id;
 use regex::Regex;
 use std::path::Path;
 
@@ -148,8 +149,10 @@ impl DependencyCache {
 /// Crude JSON section extractor — finds the value of a top-level key
 /// without pulling in a JSON parser dependency
 pub(crate) fn extract_json_section(json: &str, key: &str) -> Option<String> {
-    // Find `"key": {`
-    let search = format!("\"{}\"\\s*:", key);
+    // Find `"key": {`. Escape the key first so attacker-controlled regex
+    // metacharacters in `key` cannot inject a catastrophic-backtracking
+    // (ReDoS) pattern (CWE-1333/CWE-1336).
+    let search = format!("\"{}\"\\s*:", regex::escape(key));
     let re = Regex::new(&search).ok()?;
 
     if let Some(m) = re.find(json) {
@@ -680,7 +683,7 @@ pub fn drift_findings_to_canonical(findings: &[DriftFinding]) -> Vec<CanonicalFi
             tags.push(format!("file-type:{:?}", df.claim.source_file.file_type));
 
             CanonicalFinding {
-                id: format!("CTX-{:04}", i + 1),
+                id: generate_finding_id("CTX", i),
                 scanner: ScannerType::ContextDrift,
                 scanner_version: Some("0.1.0".to_string()),
                 rule_id: format!("context-drift.{}", df.claim.category.as_str()),

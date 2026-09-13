@@ -116,24 +116,20 @@ pub fn generate_report(
         .map(|f| {
             let mitre = crate::normalize::mitre_mapping(f);
             EnrichedFinding {
-                id: f.id.clone(),
-                scanner: format!("{:?}", f.scanner),
-                rule_id: f.rule_id.clone(),
-                severity: format!("{:?}", f.severity),
-                title: f.title.clone(),
-                description: f.description.clone(),
-                file: f.location.file.to_string_lossy().to_string(),
+                id: &f.id,
+                scanner: &f.scanner,
+                rule_id: &f.rule_id,
+                severity: &f.severity,
+                title: &f.title,
+                description: &f.description,
+                file: &f.location.file,
                 line: f.location.line,
-                cwe: f.cwe.clone(),
+                cwe: f.cwe.as_deref(),
                 cvss: f.cvss,
-                remediation: f.remediation.clone(),
-                zt_pillars: f.zt_pillars.clone(),
+                remediation: f.remediation.as_deref(),
+                zt_pillars: &f.zt_pillars,
                 mitre_tactics: mitre,
-                cross_refs: f
-                    .cross_refs
-                    .iter()
-                    .map(|cr| format!("{:?}/{}", cr.scanner, cr.rule_id))
-                    .collect(),
+                cross_refs: format_cross_refs(&f.cross_refs),
             }
         })
         .collect();
@@ -144,7 +140,6 @@ pub fn generate_report(
     let drift_findings: Vec<_> = enriched_findings
         .iter()
         .filter(|f| f.id.starts_with("CTX-"))
-        .cloned()
         .collect();
     let drift_count = drift_findings.len();
     context.insert("drift_findings", &drift_findings);
@@ -221,22 +216,30 @@ pub fn generate_report(
     Ok(output_path)
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-struct EnrichedFinding {
-    id: String,
-    scanner: String,
-    rule_id: String,
-    severity: String,
-    title: String,
-    description: String,
-    file: String,
+#[derive(Debug, serde::Serialize)]
+struct EnrichedFinding<'a> {
+    id: &'a str,
+    scanner: &'a crate::find::ScannerType,
+    rule_id: &'a str,
+    severity: &'a crate::find::Severity,
+    title: &'a str,
+    description: &'a str,
+    file: &'a std::path::Path,
     line: Option<u32>,
-    cwe: Option<String>,
+    cwe: Option<&'a str>,
     cvss: Option<f32>,
-    remediation: Option<String>,
-    zt_pillars: Vec<String>,
+    remediation: Option<&'a str>,
+    zt_pillars: &'a [String],
     mitre_tactics: Vec<String>,
     cross_refs: Vec<String>,
+}
+
+// Helper to format cross references for display
+fn format_cross_refs(cross_refs: &[crate::find::CrossReference]) -> Vec<String> {
+    cross_refs
+        .iter()
+        .map(|cr| format!("{}/{}", cr.scanner, cr.rule_id))
+        .collect()
 }
 
 fn get_template(rtype: &ReportType) -> &'static str {
@@ -463,12 +466,12 @@ pub fn generate_json_report(
     #[derive(serde::Serialize)]
     struct JsonFinding<'a> {
         id: &'a str,
-        scanner: String,
+        scanner: &'a crate::find::ScannerType,
         rule_id: &'a str,
-        severity: String,
+        severity: &'a crate::find::Severity,
         title: &'a str,
         description: &'a str,
-        file: String,
+        file: &'a std::path::Path,
         line: Option<u32>,
         cwe: Option<&'a str>,
         cvss: Option<f32>,
@@ -480,12 +483,12 @@ pub fn generate_json_report(
         .iter()
         .map(|f| JsonFinding {
             id: &f.id,
-            scanner: format!("{:?}", f.scanner),
+            scanner: &f.scanner,
             rule_id: &f.rule_id,
-            severity: format!("{:?}", f.severity),
+            severity: &f.severity,
             title: &f.title,
             description: &f.description,
-            file: f.location.file.to_string_lossy().to_string(),
+            file: &f.location.file,
             line: f.location.line,
             cwe: f.cwe.as_deref(),
             cvss: f.cvss,
@@ -737,24 +740,20 @@ pub fn generate_html_report(
         .map(|f| {
             let mitre = crate::normalize::mitre_mapping(f);
             EnrichedFinding {
-                id: f.id.clone(),
-                scanner: format!("{:?}", f.scanner),
-                rule_id: f.rule_id.clone(),
-                severity: format!("{:?}", f.severity),
-                title: f.title.clone(),
-                description: f.description.clone(),
-                file: f.location.file.to_string_lossy().to_string(),
+                id: &f.id,
+                scanner: &f.scanner,
+                rule_id: &f.rule_id,
+                severity: &f.severity,
+                title: &f.title,
+                description: &f.description,
+                file: &f.location.file,
                 line: f.location.line,
-                cwe: f.cwe.clone(),
+                cwe: f.cwe.as_deref(),
                 cvss: f.cvss,
-                remediation: f.remediation.clone(),
-                zt_pillars: f.zt_pillars.clone(),
+                remediation: f.remediation.as_deref(),
+                zt_pillars: &f.zt_pillars,
                 mitre_tactics: mitre,
-                cross_refs: f
-                    .cross_refs
-                    .iter()
-                    .map(|cr| format!("{:?}/{}", cr.scanner, cr.rule_id))
-                    .collect(),
+                cross_refs: format_cross_refs(&f.cross_refs),
             }
         })
         .collect();

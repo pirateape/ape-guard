@@ -1,7 +1,7 @@
 // Syft Scanner Driver (Layer 7)
 // Wraps syft binary for SBOM generation and dependency inventory findings.
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
-use crate::scanner::{Scanner, ScannerError};
+use crate::scanner::{generate_finding_id, is_empty_output, Scanner, ScannerError};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::Path;
@@ -90,15 +90,12 @@ impl Scanner for Syft {
             path: String,
         }
 
-        if raw.is_empty() || raw.len() < 5 {
+        if is_empty_output(raw) {
             return Ok(vec![]);
         }
 
         let report: SyftReport =
             serde_json::from_slice(raw).map_err(|e| ScannerError::ParseFailed(e.to_string()))?;
-
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
 
         let canonical = report
             .artifacts
@@ -113,7 +110,7 @@ impl Scanner for Syft {
                     .unwrap_or(".");
 
                 CanonicalFinding {
-                    id: format!("AG-SY-{}-{}-{:04}", now, &nonce[..8], i + 1),
+                    id: generate_finding_id("AG-SY", i),
                     scanner: ScannerType::Syft,
                     scanner_version: None,
                     rule_id: format!("SBOM:{}", a.name),

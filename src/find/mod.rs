@@ -177,6 +177,18 @@ pub enum Severity {
     Critical,
 }
 
+impl std::fmt::Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Severity::Info => write!(f, "Info"),
+            Severity::Low => write!(f, "Low"),
+            Severity::Medium => write!(f, "Medium"),
+            Severity::High => write!(f, "High"),
+            Severity::Critical => write!(f, "Critical"),
+        }
+    }
+}
+
 /// Confidence level in the accuracy of a finding.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Confidence {

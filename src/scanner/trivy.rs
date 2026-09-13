@@ -1,7 +1,7 @@
 // Trivy Scanner Driver
 // Wraps the trivy binary for vulnerability scanning, secret scanning, and IaC misconfiguration scanning.
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
-use crate::scanner::{Scanner, ScannerError};
+use crate::scanner::{generate_finding_id, Scanner, ScannerError};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::Path;
@@ -161,8 +161,6 @@ impl Trivy {
         let report: TrivyReport =
             serde_json::from_slice(raw).map_err(|e| ScannerError::ParseFailed(e.to_string()))?;
 
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
         let mut findings = Vec::new();
         let mut idx = 0u32;
 
@@ -190,7 +188,7 @@ impl Trivy {
                     });
 
                     findings.push(CanonicalFinding {
-                        id: format!("AG-TV-{}-{}-{:04}", now, &nonce[..8], idx),
+                        id: generate_finding_id("AG-TV", idx as usize),
                         scanner: ScannerType::TrivyVuln,
                         scanner_version: None,
                         rule_id: v.vulnerability_id.clone(),
@@ -271,8 +269,6 @@ impl Trivy {
         let report: TrivyReport =
             serde_json::from_slice(raw).map_err(|e| ScannerError::ParseFailed(e.to_string()))?;
 
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
         let mut findings = Vec::new();
         let mut idx = 0u32;
 
@@ -289,7 +285,7 @@ impl Trivy {
                     };
 
                     findings.push(CanonicalFinding {
-                        id: format!("AG-TS-{}-{}-{:04}", now, &nonce[..8], idx),
+                        id: generate_finding_id("AG-TS", idx as usize),
                         scanner: ScannerType::TrivySecret,
                         scanner_version: None,
                         rule_id: s.rule_id.clone(),
@@ -362,8 +358,6 @@ impl Trivy {
         let report: TrivyReport =
             serde_json::from_slice(raw).map_err(|e| ScannerError::ParseFailed(e.to_string()))?;
 
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
         let mut findings = Vec::new();
         let mut idx = 0u32;
 
@@ -380,7 +374,7 @@ impl Trivy {
                     };
 
                     findings.push(CanonicalFinding {
-                        id: format!("AG-TM-{}-{}-{:04}", now, &nonce[..8], idx),
+                        id: generate_finding_id("AG-TM", idx as usize),
                         scanner: ScannerType::TrivyMisconfig,
                         scanner_version: None,
                         rule_id: m.id.clone(),

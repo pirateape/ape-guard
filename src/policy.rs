@@ -126,6 +126,12 @@ fn load_policy_files(policy_dir: &Path) -> Vec<(String, String)> {
 
     for entry in entries.flatten() {
         let path = entry.path();
+        // Reject path traversal outside the policy directory so an attacker who
+        // can write anywhere under `policy_dir` cannot load arbitrary .rego files.
+        if !path.starts_with(policy_dir) {
+            tracing::warn!("Skipping policy outside policy dir: {}", path.display());
+            continue;
+        }
         if path.extension().and_then(|e| e.to_str()) == Some("rego") {
             let name = path
                 .file_stem()

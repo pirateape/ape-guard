@@ -33,6 +33,15 @@ knowledge/
 # Graphify entities
 entities.json
 
+# Local agent / project scaffolding — not for public commits
+AGENTS.md
+context.md
+todo.md
+sync-context.sh
+
+# AI-generated docs artifacts (hand-authored docs live in docs/*.md)
+docs/generated/
+
 # IDE
 .idea/
 *.iml

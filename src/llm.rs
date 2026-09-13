@@ -2,9 +2,11 @@
 // Feeds findings into a local LLM (via Ollam) to generate rich, context-aware remediation.
 // Optional — skips silently if Ollama is not running.
 use crate::find::CanonicalFinding;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Configuration for LLM enhancement
+/// Canonical definition; also referenced by `config::Config`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
     /// Ollama endpoint (default: http://localhost:11434)
     pub endpoint: String,

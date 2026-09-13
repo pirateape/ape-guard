@@ -101,9 +101,14 @@ const EXAMPLE_PATTERNS: &[&str] = &[
     "examples/",
 ];
 
-/// Apply all FP filters and return the surviving findings plus stats.
+/// Apply all FP filters in a single pass and return the surviving findings plus stats.
+///
+/// Stages are evaluated in order; a finding is counted and dropped by the FIRST
+/// enabled stage whose predicate matches. This preserves the previous per-stage
+/// short-circuit semantics: a finding removed by stage N is never seen by stage
+/// N+1, so each removed finding is tallied in exactly one counter.
 pub fn apply_fp_filters(
-    findings: Vec<CanonicalFinding>,
+    mut findings: Vec<CanonicalFinding>,
     config: &FilterConfig,
 ) -> (Vec<CanonicalFinding>, FilterStats) {
     let total_before = findings.len();
@@ -112,112 +117,65 @@ pub fn apply_fp_filters(
         ..Default::default()
     };
 
-    let mut surviving = findings;
+    findings.retain(|f| {
+        // Stage 1: Path-based exclusions
+        if config.exclude_paths_enabled && is_excluded_path(&f.location.file, config) {
+            stats.path_excluded += 1;
+            return false;
+        }
 
-    // Stage 1: Path-based exclusions
-    if config.exclude_paths_enabled {
-        let (keep, removed) = partition_by(surviving, |f| {
-            if is_excluded_path(&f.location.file, config) {
-                stats.path_excluded += 1;
-                false
-            } else {
-                true
-            }
-        });
-        surviving = keep;
-        let _ = removed;
-    }
+        // Stage 2: Test-code suppression — drop Info/Low findings in test files
+        if config.suppress_test_low_severity && is_test_file(&f.location.file) && is_low_severity(f)
+        {
+            stats.test_suppressed += 1;
+            return false;
+        }
 
-    // Stage 2: Test-code suppression — drop Info/Low findings in test files
-    if config.suppress_test_low_severity {
-        let (keep, _) = partition_by(surviving, |f| {
-            if is_test_file(&f.location.file)
-                && (f.severity == Severity::Info || f.severity == Severity::Low)
-            {
-                stats.test_suppressed += 1;
-                false
-            } else {
-                true
-            }
-        });
-        surviving = keep;
-    }
+        // Stage 3: Cross-scanner confirmation — require 2+ scanners for Info/Low
+        if config.require_cross_scanner_for_low && is_low_severity(f) && f.cross_refs.is_empty() {
+            stats.cross_scanner_filtered += 1;
+            return false;
+        }
 
-    // Stage 3: Cross-scanner confirmation — require 2+ scanners for Info/Low
-    if config.require_cross_scanner_for_low {
-        let (keep, _) = partition_by(surviving, |f| {
-            if f.severity == Severity::Info || f.severity == Severity::Low {
-                if !f.cross_refs.is_empty() {
-                    // cross_refs are OTHER scanners that confirmed — +1 for the primary scanner
-                    true
-                } else {
-                    stats.cross_scanner_filtered += 1;
-                    false
-                }
-            } else {
-                true
-            }
-        });
-        surviving = keep;
-    }
+        // Stage 4: AI-grade rejection — drop findings the grader rejected
+        if matches!(&f.grade, Some(GradeVerdict::Rejected { .. })) {
+            stats.grade_rejected += 1;
+            return false;
+        }
 
-    // Stage 4: AI-grade rejection — drop findings the grader rejected
-    {
-        let (keep, _) = partition_by(surviving, |f| {
-            if let Some(GradeVerdict::Rejected { .. }) = &f.grade {
-                stats.grade_rejected += 1;
-                false
-            } else {
-                true
-            }
-        });
-        surviving = keep;
-    }
+        // Stage 5: Confidence threshold
+        if config.min_confidence > 0 && confidence_level(f) < config.min_confidence {
+            stats.confidence_filtered += 1;
+            return false;
+        }
 
-    // Stage 5: Confidence threshold
-    if config.min_confidence > 0 {
-        let (keep, _) = partition_by(surviving, |f| {
-            let conf_level = match f.confidence {
-                Confidence::Tentative => 0,
-                Confidence::Firm => 1,
-                Confidence::Certain => 2,
-            };
-            if conf_level < config.min_confidence {
-                stats.confidence_filtered += 1;
-                false
-            } else {
-                true
-            }
-        });
-        surviving = keep;
-    }
-
-    // Stage 6: Severity floor
-    if let Some(min_sev) = config.min_severity {
-        let (keep, _) = partition_by(surviving, |f| {
+        // Stage 6: Severity floor
+        if let Some(min_sev) = config.min_severity {
             if (f.severity as u8) < min_sev {
                 stats.severity_filtered += 1;
-                false
-            } else {
-                true
+                return false;
             }
-        });
-        surviving = keep;
-    }
+        }
 
-    stats.total_after = surviving.len();
-    (surviving, stats)
+        true
+    });
+
+    stats.total_after = findings.len();
+    (findings, stats)
 }
 
-/// Partition a Vec into (keep, removed) based on a predicate.
-fn partition_by<F>(
-    findings: Vec<CanonicalFinding>,
-    mut pred: F,
-) -> (Vec<CanonicalFinding>, Vec<CanonicalFinding>)
-where
-    F: FnMut(&CanonicalFinding) -> bool,
-{
-    findings.into_iter().partition(|f| pred(f))
+/// Info or Low severity (used by stages 2 and 3).
+fn is_low_severity(f: &CanonicalFinding) -> bool {
+    matches!(f.severity, Severity::Info | Severity::Low)
+}
+
+/// Numeric confidence level (0=Tentative, 1=Firm, 2=Certain) for the threshold stage.
+fn confidence_level(f: &CanonicalFinding) -> u8 {
+    match f.confidence {
+        Confidence::Tentative => 0,
+        Confidence::Firm => 1,
+        Confidence::Certain => 2,
+    }
 }
 
 /// Check if a file path should be excluded based on configured patterns.

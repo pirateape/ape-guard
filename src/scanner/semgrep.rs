@@ -1,7 +1,7 @@
 // Semgrep Scanner Driver
 // Wraps the semgrep binary for static analysis (SAST).
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
-use crate::scanner::{Scanner, ScannerError};
+use crate::scanner::{generate_finding_id, Scanner, ScannerError};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::Path;
@@ -115,9 +115,6 @@ impl Scanner for Semgrep {
         let results: SemgrepResults =
             serde_json::from_slice(raw).map_err(|e| ScannerError::ParseFailed(e.to_string()))?;
 
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
-
         let canonical: Vec<CanonicalFinding> = results
             .results
             .iter()
@@ -139,7 +136,7 @@ impl Scanner for Semgrep {
                 });
 
                 CanonicalFinding {
-                    id: format!("AG-SG-{}-{}-{:04}", now, &nonce[..8], i + 1),
+                    id: generate_finding_id("AG-SG", i),
                     scanner: ScannerType::Semgrep,
                     scanner_version: None,
                     rule_id: f.check_id.clone(),
@@ -228,6 +225,7 @@ mod tests {
             f1.rule_id,
             "javascript.express.security.audit.xss.mustache-escape"
         );
+        assert!(f1.id.starts_with("AG-SG-")); // Check new ID format
         assert_eq!(f1.severity, Severity::High);
         assert_eq!(f1.location.line, Some(45));
         assert_eq!(f1.location.column, Some(12));

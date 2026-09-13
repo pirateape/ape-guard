@@ -1,7 +1,7 @@
 // DAST Scanner Driver (Layer 5)
 // Wraps nuclei binary for dynamic web application security scanning.
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
-use crate::scanner::{Scanner, ScannerError};
+use crate::scanner::{generate_finding_id, Scanner, ScannerError};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::Path;
@@ -126,8 +126,6 @@ impl DastScanner {
         // Nuclei outputs one JSON object per line (JSON Lines format)
         let body = String::from_utf8_lossy(raw);
         let mut findings = Vec::new();
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
         let mut idx = 0u32;
 
         for line in body.lines() {
@@ -206,7 +204,7 @@ impl DastScanner {
                 .or(result.cvss_score);
 
             findings.push(CanonicalFinding {
-                id: format!("AG-DS-{}-{}-{:04}", now, &nonce[..8], idx),
+                id: generate_finding_id("AG-DS", idx as usize),
                 scanner: ScannerType::Nuclei,
                 scanner_version: None,
                 rule_id: result.template_id.clone(),

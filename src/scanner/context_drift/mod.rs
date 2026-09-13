@@ -583,7 +583,7 @@ mod tests {
         assert_eq!(canonical.len(), 1);
         assert_eq!(canonical[0].scanner, ScannerType::ContextDrift);
         assert!(canonical[0].rule_id.starts_with("context-drift."));
-        assert!(canonical[0].id.starts_with("CTX-"));
+        assert!(canonical[0].id.starts_with("CTX-2026")); // Check new ID format with date
         assert!(canonical[0].tags.contains(&"context-drift".to_string()));
     }
 

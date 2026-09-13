@@ -3,6 +3,7 @@
 // Uses AWS CLI, Prowler, or S3audit when available
 use super::{Scanner, ScannerError};
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
+use crate::scanner::generate_finding_id;
 use async_trait::async_trait;
 use std::path::Path;
 
@@ -87,8 +88,6 @@ impl Scanner for AwsS3Scanner {
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         let output = String::from_utf8_lossy(raw);
         let mut findings = Vec::new();
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
 
         // Parse AWS CLI JSON output if available
         if output.contains("Buckets") {
@@ -105,7 +104,7 @@ impl Scanner for AwsS3Scanner {
                             .unwrap_or("unknown");
 
                         findings.push(CanonicalFinding {
-                            id: format!("AG-S3-{}-{}-{:04}", now, &nonce[..8], i + 1),
+                            id: generate_finding_id("AG-S3", i),
                             scanner: ScannerType::AwsS3,
                             scanner_version: None,
                             rule_id: "AWS001".to_string(),
@@ -167,7 +166,7 @@ impl Scanner for AwsS3Scanner {
                 };
 
                 findings.push(CanonicalFinding {
-                    id: format!("AG-S3-{}-{}-{:04}", now, &nonce[..8], findings.len() + 1),
+                    id: generate_finding_id("AG-S3", findings.len()),
                     scanner: ScannerType::AwsS3,
                     scanner_version: None,
                     rule_id: if line.contains("PUBLIC S3 BUCKET") {
