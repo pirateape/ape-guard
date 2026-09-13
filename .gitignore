@@ -27,6 +27,9 @@ mempalace.json
 mempalace.yaml
 *.mempalace.md
 
+#knowledge
+knowledge/
+
 # Graphify entities
 entities.json
 
