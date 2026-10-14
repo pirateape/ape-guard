@@ -6,7 +6,7 @@ use crate::arch::{
     assess_component_risks, ArchitectureArtifact, ArtifactType, ComponentRisk, DecisionStatus,
 };
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
-use crate::scanner::{Scanner, ScannerError};
+use crate::scanner::{generate_finding_id, Scanner, ScannerError};
 use std::path::{Path, PathBuf};
 
 /// Architecture Analysis Scanner
@@ -155,7 +155,7 @@ pub fn generate_architecture_findings(artifacts: &[ArchitectureArtifact]) -> Vec
             ArtifactType::Unknown => {
                 // Unknown artifact type - generate warning finding
                 findings.push(CanonicalFinding {
-                    id: format!("ARCH-{}", findings.len() + 1),
+                    id: generate_finding_id("ARCH", findings.len()),
                     scanner: ScannerType::Architecture,
                     scanner_version: Some("0.1.0".to_string()),
                     rule_id: "arch.discovery".to_string(),

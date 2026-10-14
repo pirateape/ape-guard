@@ -206,7 +206,6 @@ pub enum OutputFormat {
     Json,
     Sarif,
     Html,
-    Pdf,
 }
 
 #[derive(Debug, Clone, ValueEnum)]

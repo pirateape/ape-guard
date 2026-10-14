@@ -1,7 +1,7 @@
 // Checkov Scanner Driver (Layer 6)
 // Wraps the checkov binary for IaC misconfiguration scanning.
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
-use crate::scanner::{Scanner, ScannerError};
+use crate::scanner::{generate_finding_id, is_empty_output, Scanner, ScannerError};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::Path;
@@ -100,15 +100,12 @@ impl Scanner for Checkov {
             check_type: Option<String>,
         }
 
-        if raw.is_empty() || raw.len() < 5 {
+        if is_empty_output(raw) {
             return Ok(vec![]);
         }
 
         let report: CheckovReport =
             serde_json::from_slice(raw).map_err(|e| ScannerError::ParseFailed(e.to_string()))?;
-
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
 
         let canonical = report
             .results
@@ -139,7 +136,7 @@ impl Scanner for Checkov {
                 let line = f.file_line_range.as_ref().and_then(|r| r.first().copied());
 
                 CanonicalFinding {
-                    id: format!("AG-CK-{}-{}-{:04}", now, &nonce[..8], i + 1),
+                    id: generate_finding_id("AG-CK", i),
                     scanner: ScannerType::Checkov,
                     scanner_version: None,
                     rule_id: f.check_id.clone(),

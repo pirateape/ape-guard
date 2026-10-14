@@ -3,7 +3,7 @@
 // Uses filesystem source with JSON Lines output format.
 // Detects secrets that Gitleaks may miss — different detection engine, entropy-based + regex.
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
-use crate::scanner::{Scanner, ScannerError};
+use crate::scanner::{generate_finding_id, Scanner, ScannerError};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::Path;
@@ -60,6 +60,11 @@ impl Scanner for Trufflehog {
     }
 
     async fn scan_raw(&self, path: &Path) -> Result<Vec<u8>, ScannerError> {
+        // Prevent argument injection: a filesystem target beginning with '-' could
+        // be parsed as a trufflehog flag rather than a path.
+        crate::scanner::reject_flag_like_arg(&path.to_string_lossy())
+            .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
+
         // TruffleHog filesystem scan outputs JSON Lines (NDJSON) to stdout.
         // Using --no-update to skip update checks and --json for JSON output.
         let output = tokio::process::Command::new(&self.binary)
@@ -123,8 +128,6 @@ impl Scanner for Trufflehog {
 
         // Strategy 3: NDJSON — one JSON object per line
         let mut findings = Vec::new();
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
         let mut index: u32 = 0;
 
         for line in content.lines() {
@@ -136,7 +139,7 @@ impl Scanner for Trufflehog {
             match parse_trufflehog_line(trimmed) {
                 Ok(Some(mut f)) => {
                     index += 1;
-                    f.id = format!("AG-{}-{}-{:04}", now, &nonce[..8], index);
+                    f.id = generate_finding_id("AG-TH", index as usize);
                     f.scanner = ScannerType::Trufflehog;
                     findings.push(f);
                 }
@@ -156,14 +159,12 @@ impl Trufflehog {
     /// Parse an array of JSON values into canonical findings
     fn parse_json_array(arr: &[serde_json::Value]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         let mut findings = Vec::new();
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
 
         for (i, val) in arr.iter().enumerate() {
             let line = serde_json::to_string(val).unwrap_or_default();
             match parse_trufflehog_line(&line) {
                 Ok(Some(mut f)) => {
-                    f.id = format!("AG-{}-{}-{:04}", now, &nonce[..8], i + 1);
+                    f.id = generate_finding_id("AG-TH", i);
                     f.scanner = ScannerType::Trufflehog;
                     findings.push(f);
                 }

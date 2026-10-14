@@ -1,5 +1,33 @@
 // Scanner Driver Trait
 // Each scanner implements this trait. New scanners can be added via the plugin system.
+//
+// ## Scanner Deduplication Pattern
+//
+// To reduce code duplication across scanner implementations, use these helper functions:
+//
+// - `binary_exists()` - Check if a binary exists on PATH
+// - `generate_finding_id()` - Generate consistent finding IDs with timestamp/nonce
+// - `is_empty_output()` - Check for empty/minimal scanner output
+// - `run_command_with_timeout()` - Execute scanner binaries with timeout
+//
+// Example usage in parse_output():
+// ```rust
+// use crate::scanner::{generate_finding_id, is_empty_output};
+//
+// fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
+//     if is_empty_output(raw) {
+//         return Ok(vec![]);
+//     }
+//     // ... parsing logic ...
+//     let canonical = findings.iter().enumerate().map(|(i, f)| {
+//         CanonicalFinding {
+//             id: generate_finding_id("AG-CK", i), // AG-CK-20260828-abc123-0001
+//             // ... other fields ...
+//         }
+//     }).collect();
+//     Ok(canonical)
+// }
+// ```
 use crate::find::{CanonicalFinding, ScannerType};
 use async_trait::async_trait;
 use std::path::Path;
@@ -8,6 +36,44 @@ use std::time::Duration;
 /// Check if a binary exists on the system PATH
 pub fn binary_exists(binary: &str) -> bool {
     which::which(binary).is_ok()
+}
+
+/// Helper function to generate finding IDs with timestamp and nonce
+/// Reduces duplication in parse_output implementations
+///
+/// # Arguments
+/// * `prefix` - Scanner-specific prefix (e.g., "AG-CK" for Checkov)
+/// * `index` - Finding index for uniqueness
+///
+/// # Returns
+/// Formatted ID like "AG-CK-20260828-abc123-0001"
+pub fn generate_finding_id(prefix: &str, index: usize) -> String {
+    let now = chrono::Utc::now().format("%Y%m%d").to_string();
+    let nonce = uuid::Uuid::new_v4().simple().to_string();
+    format!("{}-{}-{}-{:04}", prefix, now, &nonce[..8], index + 1)
+}
+
+/// Helper function to check for empty/minimal output
+/// Common pattern across scanner parsers
+///
+/// # Arguments
+/// * `raw` - Raw scanner output bytes
+///
+/// # Returns
+/// true if output is empty or too small to be valid JSON
+pub fn is_empty_output(raw: &[u8]) -> bool {
+    raw.is_empty() || raw.len() < 5
+}
+
+/// Reject an argument that begins with `-` to prevent command **argument
+/// injection**: a scanner target path such as `-noout` or `--help` would
+/// otherwise be parsed by the wrapped CLI as a flag rather than a path.
+/// Returns the argument unchanged when it is safe to use.
+pub fn reject_flag_like_arg(arg: &str) -> anyhow::Result<&str> {
+    if arg.starts_with('-') {
+        anyhow::bail!("refusing to use argument that looks like a flag: {arg}");
+    }
+    Ok(arg)
 }
 
 /// Run a command with a timeout, returning its stdout on success
@@ -103,6 +169,9 @@ pub enum ScannerResult {
 pub enum ScannerError {
     #[error("Scanner not found: {0}")]
     NotFound(String),
+
+    #[error("Invalid scanner argument: {0}")]
+    InvalidArgument(String),
 
     #[error("Scanner execution failed: {0}")]
     ExecutionFailed(String),

@@ -32,6 +32,12 @@ pub struct RecordScanInput<'a> {
     pub scanners_used: &'a [String],
     /// All findings from the scan
     pub findings: &'a [CanonicalFinding],
+    /// Store the full findings snapshot in the cache.
+    ///
+    /// When `false`, only scan metadata (count, scanners, timestamps) is
+    /// persisted and the findings snapshot is stored empty. The `report
+    /// --snapshot` and `compare` commands require this to be `true`.
+    pub store_findings: bool,
 }
 
 impl ScanCache {
@@ -53,11 +59,13 @@ impl ScanCache {
             );",
         )?;
 
-        // Migration: add findings_snapshot column if upgrading from older schema
-        let _ = conn.execute(
+        // Migration: add findings_snapshot column (harmless to ignore — only relevant for upgrades)
+        if let Err(e) = conn.execute(
             "ALTER TABLE scan_history ADD COLUMN findings_snapshot TEXT",
             [],
-        );
+        ) {
+            tracing::debug!("Migration skipped: {}", e);
+        }
 
         Ok(ScanCache {
             conn,
@@ -258,7 +266,13 @@ impl ScanCache {
         }
 
         let scanners = input.scanners_used.join(",");
-        let findings_json = serde_json::to_string(input.findings)?;
+        // When store_findings is false, persist only an empty snapshot so the
+        // cache stays lean (metadata such as count/scanners/timestamps is kept).
+        let findings_json = if input.store_findings {
+            serde_json::to_string(input.findings)?
+        } else {
+            "[]".to_string()
+        };
 
         self.conn.execute(
             "INSERT OR REPLACE INTO scan_history (scan_id, target, started_at, completed_at, total_findings, scanners_used, findings_snapshot)
@@ -387,6 +401,7 @@ mod tests {
                 total_findings: findings.len() as u32,
                 scanners_used: &["gitleaks".to_string()],
                 findings: &findings,
+                store_findings: true,
             })
             .expect("cache test: record_scan should succeed");
 
@@ -401,6 +416,59 @@ mod tests {
 
         assert_eq!(row.0, started);
         assert_eq!(row.1, completed);
+    }
+
+    #[test]
+    fn test_record_scan_respects_store_findings_flag() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
+
+        let findings = vec![sample_finding()];
+
+        // store_findings: true → full snapshot persisted
+        cache
+            .record_scan(RecordScanInput {
+                scan_id: "scan-store",
+                target: ".",
+                started_at: "2026-01-01T00:00:00Z",
+                completed_at: "2026-01-01T00:05:00Z",
+                total_findings: findings.len() as u32,
+                scanners_used: &["gitleaks".to_string()],
+                findings: &findings,
+                store_findings: true,
+            })
+            .expect("cache test: record_scan should succeed");
+
+        let stored = cache.get_scan_findings("scan-store").unwrap();
+        assert_eq!(stored.unwrap().len(), 1);
+
+        // store_findings: false → snapshot stored empty (metadata retained)
+        cache
+            .record_scan(RecordScanInput {
+                scan_id: "scan-nostore",
+                target: ".",
+                started_at: "2026-01-02T00:00:00Z",
+                completed_at: "2026-01-02T00:05:00Z",
+                total_findings: findings.len() as u32,
+                scanners_used: &["gitleaks".to_string()],
+                findings: &findings,
+                store_findings: false,
+            })
+            .expect("cache test: record_scan should succeed");
+
+        let empty = cache.get_scan_findings("scan-nostore").unwrap();
+        assert_eq!(empty.unwrap().len(), 0);
+
+        // Metadata (count) is still recorded even when findings are omitted.
+        let count: u32 = cache
+            .conn
+            .query_row(
+                "SELECT total_findings FROM scan_history WHERE scan_id = ?1",
+                params!["scan-nostore"],
+                |r| r.get(0),
+            )
+            .expect("cache test: query_row should succeed");
+        assert_eq!(count, 1);
     }
 
     #[test]

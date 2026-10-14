@@ -27,8 +27,20 @@ mempalace.json
 mempalace.yaml
 *.mempalace.md
 
+#knowledge
+knowledge/
+
 # Graphify entities
 entities.json
+
+# Local agent / project scaffolding — not for public commits
+AGENTS.md
+context.md
+todo.md
+sync-context.sh
+
+# AI-generated docs artifacts (hand-authored docs live in docs/*.md)
+docs/generated/
 
 # IDE
 .idea/
@@ -44,3 +56,5 @@ STATE.md
 loop-run-log.md
 loop-ledger.json
 logs/loop-*.log
+findings.md
+.okf-cache.json
