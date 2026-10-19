@@ -58,3 +58,8 @@ loop-ledger.json
 logs/loop-*.log
 findings.md
 .okf-cache.json
+node_modules/
+*.log
+.env*
+!/.env.example
+!.env.*.template
