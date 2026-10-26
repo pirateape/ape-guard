@@ -437,7 +437,7 @@ jobs:
       - name: Run security scan
         run: apeguard scan --fail-on high --format sarif
       - name: Upload SARIF to GitHub
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: .apeguard/reports/*.sarif
 ```
