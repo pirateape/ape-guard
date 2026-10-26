@@ -1377,7 +1377,10 @@ mod tests {
         // SARIF 2.1.0 requires camelCase property names; GitHub's SARIF
         // validator rejects snake_case as "additional property".
         let driver = &json["runs"][0]["tool"]["driver"];
-        assert!(driver.get("informationUri").is_some(), "driver.informationUri must be camelCase");
+        assert!(
+            driver.get("informationUri").is_some(),
+            "driver.informationUri must be camelCase"
+        );
         assert!(driver.get("information_uri").is_none());
         if let Some(rule) = driver["rules"].as_array().and_then(|r| r.first()) {
             assert!(rule.get("ruleId").is_none() && rule.get("id").is_some());
@@ -1385,9 +1388,18 @@ mod tests {
                 assert!(rule.get("short_description").is_none());
             }
         }
-        if let Some(result) = json["runs"][0]["results"].as_array().and_then(|r| r.first()) {
-            assert!(result.get("ruleId").is_some(), "result.ruleId must be camelCase");
-            assert!(result.get("ruleIndex").is_some(), "result.ruleIndex must be camelCase");
+        if let Some(result) = json["runs"][0]["results"]
+            .as_array()
+            .and_then(|r| r.first())
+        {
+            assert!(
+                result.get("ruleId").is_some(),
+                "result.ruleId must be camelCase"
+            );
+            assert!(
+                result.get("ruleIndex").is_some(),
+                "result.ruleIndex must be camelCase"
+            );
             assert!(result.get("rule_id").is_none());
             if let Some(loc) = result["locations"].as_array().and_then(|l| l.first()) {
                 assert!(loc.get("physicalLocation").is_some());
