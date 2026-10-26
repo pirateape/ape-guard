@@ -73,6 +73,7 @@ ApeGuard follows [Semantic Versioning](https://semver.org/):
 
 | Version | Date       | Highlights                                                                                                          |
 | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------- |
+| 0.5.3   | 2026-10-26 | UZTF v2.0 (12 pillars), MCP/policy/LLM security hardening, CI gates (DCO/coverage/deny/reproducible), dependency advisories cleared |
 | 0.3.1   | 2026-06-01 | Bug fixes (--no-color, Report --reports/--format, MCP binary paths), CODE_OF_CONDUCT, CONTRIBUTING, issue templates |
 | 0.3.0   | 2026-05-31 | Checkov (IaC) + Syft (SBOM) layers, all 7 layers now available, Gitleaks reliability fix, CI mode safety            |
 | 0.2.0   | 2026-05-31 | Parallel scanning, HTML charts, severity-weighted ZT scorecard, --ci flag, multi-arch Docker                        |
