@@ -2,6 +2,36 @@
 
 All notable changes to ApeGuard are documented here.
 
+## [0.5.3] — 2026-10-26
+
+### Added
+
+- **UZTF v2.0 Zero Trust scorecard** — migrated from 8 pillars (0-800) to 12 pillars (0-1200) with severity-weighted scoring (Critical 20, High 15, Medium 10, Low 5, Info 1), gap analysis and posture classification (`MostlyAdaptive` / `MostlyAdvanced` / `MostlyBaseline` / `Initial`)
+- **Expanded attack chain analysis** — broader cross-scanner correlation with 4 detection strategies
+- **CI hardening** — DCO sign-off check (grandfathered commits authored before 2026-10-26), coverage job (cargo-tarpaulin), supply-chain security gate (`cargo deny` + `cargo machete`), reproducible-build verification, Dependabot docker ecosystem
+- **OpenSSF readiness docs** — Best Practices badge criteria map, security self-audit checklist, dependency sweep report, project GOVERNANCE
+
+### Changed
+
+- `reqwest` pinned to 0.12 with `rustls-tls` only (default features dropped)
+- Config merge now honors all `.apeguard.yaml` sections; ZT scorecard computed before severity filtering
+- Docs refreshed for the 12-layer pipeline and UZTF v2.0 wording; CONTRIBUTING/SECURITY updates
+
+### Security
+
+- **MCP server** — scan/arch target path validation (flag injection, `..` traversal) and DAST web-URL validation (SSRF to loopback/private/link-local/CGNAT hosts); JSON-RPC line length bounded to 1 MiB
+- **Policy engine** — canonicalized policy paths block symlink escapes outside `.apeguard/policies/`
+- **LLM remediation** — prompt-injection guardrail; pipe-to-shell download rejection without false-positives on benign English ("curl the docs and share")
+- **HTML report** — Content-Security-Policy meta header
+- **CLI** — non-zero exit when the fail threshold is reached
+- **Dependencies** — cleared RUSTSEC-2026-0381/0382/0386 (`webpki-roots` 1.0.11, `rustls-webpki` 0.103.16, `tokio` 1.54.1); deny unknown registries/sources
+
+### Fixed
+
+- Homebrew formula sha256 corrected for the v0.5.2 tarball; Checkov/Syft optional deps added
+- `Cargo.toml` repository URL corrected to `pirateape/ape-guard`
+- Duplicate `[0.5.0]` changelog heading removed
+
 ## [0.5.2] — 2026-07-22
 
 ### Fixed
