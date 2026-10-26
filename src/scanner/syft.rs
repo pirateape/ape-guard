@@ -59,6 +59,8 @@ impl Scanner for Syft {
 
     async fn scan_raw(&self, path: &Path) -> Result<Vec<u8>, ScannerError> {
         let path_str = path.to_string_lossy().to_string();
+        crate::scanner::reject_flag_like_arg(&path_str)
+            .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
         let args = [path_str.as_str(), "-o", "json"];
         crate::scanner::run_command_with_timeout(&self.binary, &args, 180).await
     }

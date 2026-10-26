@@ -73,6 +73,8 @@ impl Scanner for TerraformScanner {
     }
 
     async fn scan_raw(&self, _path: &Path) -> Result<Vec<u8>, ScannerError> {
+        crate::scanner::reject_flag_like_arg(&self.terraform_dir)
+            .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
         if crate::scanner::binary_exists("checkov") {
             super::run_command_with_timeout(
                 "checkov",

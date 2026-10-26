@@ -20,8 +20,8 @@ apeguard scan
 
 ## Features
 
-- **7-layer scanning pipeline** — Secrets → SAST → SCA → Container → DAST → IaC → SBOM in a single command
-- **Unified Zero Trust Framework mapping** — Every finding maps to the 8-pillar [UZTF](https://github.com/pirateape/unified-zero-trust-framework) with maturity scoring (Baseline → Advanced → Adaptive). Builds on the CISA Zero Trust Maturity Model as a foundational stepping stone.
+- **12-layer scanning pipeline** — Secrets → SAST → SCA → Container → DAST → IaC → SBOM in a single command
+- **Unified Zero Trust Framework mapping** — Every finding maps to the 12-pillar [UZTF](https://github.com/pirateape/unified-zero-trust-framework) with maturity scoring (Baseline → Advanced → Adaptive). Builds on the CISA Zero Trust Maturity Model as a foundational stepping stone.
 - **Multi-audience reports** — Technical (engineers), Executive (leadership), Roadmap (EMs)
 - **Multi-format output** — Markdown, JSON, SARIF, HTML
 - **Attack chain analysis** — Cross-references findings across scanners to detect multi-stage exploitation paths
@@ -169,40 +169,62 @@ apeguard report
 ### Layer Model
 
 ```
-Layer 1 ─ Secrets ───── Gitleaks ──── regex & entropy detection
-Layer 2 ─ SAST ──────── Semgrep ───── static analysis (40+ languages)
-Layer 3 ─ SCA vulns ─── Trivy fs ──── filesystem dependency scanning
-Layer 4 ─ Container ─── Trivy image ─ container image vulnerability scanning
-Layer 5 ─ DAST ──────── Nuclei ────── dynamic web/template scanning
-Layer 6 ─ IaC ───────── Checkov ───── infrastructure-as-code misconfiguration scanning
-Layer 7 ─ SBOM ──────── Syft ──────── software bill of materials inventory
+Layer  1  Secrets        Gitleaks + TruffleHog   regex/entropy secret detection
+Layer  2  SAST           Semgrep                 static analysis (40+ languages)
+Layer  3  SCA            Trivy                   filesystem dependency vulnerabilities
+Layer  4  Container      Trivy image             container image vulnerabilities
+Layer  5  DAST           Nuclei                  dynamic web / template scanning
+Layer  6  IaC            Checkov                 Terraform / K8s / CloudFormation misconfig
+Layer  7  SBOM           Syft                    software bill of materials inventory
+Layer  8  Config drift   ContextDrift (native)   agent-context vs repository drift
+Layer  9  MCP security   snyk-agent-scan / mcp-scan  MCP server & tool poisoning audit
+Layer 10  Terraform IaC  Checkov / tfsec / Terrascan  Terraform-specific analysis
+Layer 11  AWS S3         aws / prowler           S3 bucket permission audit
+Layer 12  TLS certs      openssl                 TLS certificate inspection
 ```
 
 ### Pipeline
 
 ```
 Target
-  │
-  ├─ gitleaks ──┐
-  ├─ semgrep ───┤
-  ├─ trivy fs ──┤
-  ├─ trivy image┤
-  ├─ nuclei ────┤
-  ├─ checkov ───┤
-  ├─ syft ──────┘
-  │
-  ▼
-Deduplication ─── (file, line, rule_id) composite key
-  │
-  ├─ Cross-reference ──── Attack chain builder
-  ├─ ZT mapping ───────── 8-pillar maturity scorecard
-  ├─ LLM remediation ──── Ollama local model (optional)
-  ├─ AI grading ───────── Adversarial "prove FP" verification (--grade)
-  ├─ Severity filter
-  ├─ Risk scoring ──────── 6-dimension unified score (deterministic, always runs)
-  │
-  ▼
-Reports ─── technical.md  executive.md  roadmap.md  + JSON / SARIF / HTML
+  gitleaks ─────┐
+  trufflehog ───┤
+  semgrep ──────┤
+  trivy ────────┤
+  container ────┤
+  nuclei ───────┤
+  checkov ──────┤
+  syft ─────────┤
+  context_drift ┤
+  mcp_security ─┤
+  terraform ────┤
+  aws_s3 ───────┤
+  tls ──────────┘
+        │
+        ▼
+  Deduplication ──── (file, line, rule_id) composite key
+        ▼
+  Reachability ───── reachability filter from entry points
+        ▼
+  Cross-reference ── attack chain builder
+        ▼
+  False-positive ─── FP filter
+        ▼
+  LLM remediation ── Ollama local model (optional)
+        ▼
+  Adversarial grade ─ prove-FP verification (--grade)
+        ▼
+  Severity filter
+        ▼
+  Policy-as-Code ─── Rego/OPA rules (--policy)
+        ▼
+  Risk scoring ───── 6-dimension unified score (deterministic, always runs)
+        ▼
+  Zero Trust ─────── 12-pillar UZTF v2.0 scorecard
+        ▼
+  STRIDE ─────────── threat-model coverage
+        ▼
+  Reports ────────── technical.md / executive.md / roadmap.md (+ JSON/SARIF/HTML)
 ```
 
 ### Finding ID format
@@ -215,28 +237,36 @@ Example: `AG-GL-20260531-a1b2c3d4-001`
 
 ## Zero Trust Framework Mapping
 
-ApeGuard implements the [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — an 8-pillar maturity model that builds on the [CISA Zero Trust Maturity Model](https://www.cisa.gov/zero-trust-maturity-model) as its foundational stepping stone.
+ApeGuard implements the [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — an 12-pillar maturity model that builds on the [CISA Zero Trust Maturity Model](https://www.cisa.gov/zero-trust-maturity-model) as its foundational stepping stone.
 
 > **UZTF** adds quantitative scoring and automated gap analysis on top of CISA's strategic maturity tiers. CISA defines _what_ Zero Trust looks like; UZTF defines _how to measure and achieve it_.
 
-Each finding is mapped to one or more UZTF pillars:
+Each finding is mapped to one or more UZTF v2.0 pillars:
 
-| Pillar             | Description                        | Example Finding     | CISA Origin                     |
-| ------------------ | ---------------------------------- | ------------------- | ------------------------------- |
-| **Identity**       | Authentication & authorization     | Hardcoded API keys  | Direct: CISA Identity           |
-| **Device**         | Endpoint health & compliance       | Outdated dependency | Direct: CISA Devices            |
-| **Network**        | Segmentation & traffic security    | Open port / SSRF    | Direct: CISA Networks           |
-| **Application**    | App security & input validation    | SQL injection / XSS | Direct: CISA Applications       |
-| **Data**           | Encryption & classification        | Secrets in source   | Direct: CISA Data               |
-| **Visibility**     | Monitoring & analytics             | Missing audit log   | Extension of CISA cross-cutting |
-| **Automation**     | Automated response & orchestration | CI/CD misconfig     | Extension of CISA cross-cutting |
-| **Infrastructure** | Cloud/host configuration           | IAM misconfig       | Extension of CISA cross-cutting |
+| Pillar | Description | Example Finding |
+|--------|-------------|-----------------|
+| **Identity** | Authentication and authorization | Hardcoded API keys |
+| **Endpoints** | Endpoint health and compliance | Outdated dependency |
+| **IoT / OT** | Connected device and OT controls | Exposed device service |
+| **Networks** | Segmentation and traffic security | Open port / SSRF |
+| **Infrastructure** | Cloud and host configuration | IAM misconfiguration |
+| **Applications** | Application security and input validation | SQL injection / XSS |
+| **Supply chain** | Dependency and build integrity | Vulnerable transitive dep |
+| **Data** | Encryption and classification | Secret in source |
+| **AI systems** | Model and agent safety | Prompt-injection exposure |
+| **Operations** | Monitoring and response | Missing audit log |
+| **Resilience** | Recovery and continuity | Missing backup policy |
+| **Governance** | Policy, risk and compliance | Missing policy-as-code |
 
-### Maturity Scoring (UZTF)
+### Maturity scoring (UZTF v2.0)
 
-- **Baseline** (0–50): Foundational controls present, significant gaps
-- **Advanced** (51–80): Proactive security measures implemented
-- **Adaptive** (81–100): Real-time, automated, self-healing posture
+Each of the 12 pillars scores 0-100 from its severity-weighted findings (Critical 20, High 15, Medium 10, Low 5, Info 1).
+
+- **Baseline** - pillar score below 51
+- **Advanced** - pillar score 51 or above
+- **Adaptive** - pillar score is 100
+
+The overall scorecard (0-1200) is classified as `MostlyAdaptive` (>= 961), `MostlyAdvanced` (>= 601), `MostlyBaseline` (>= 241), or `Initial`.
 
 The scorecard shows pillar-by-pillar maturity with actionable gap analysis. For the full framework specification, see the [UZTF repository](https://github.com/pirateape/unified-zero-trust-framework).
 
@@ -307,16 +337,23 @@ apeguard serve
 
 ### MCP Tools
 
-| Tool             | Description                                                        |
-| ---------------- | ------------------------------------------------------------------ |
-| `scan`           | Run security assessment (layers 1–5) with optional severity filter |
-| `list_tools`     | Enumerate available MCP tools                                      |
-| `resources/read` | Access scan reports, scorecards, and architecture analysis         |
+| Tool | Description |
+|------|-------------|
+| `scan` | Run a full security assessment (layers 1-12) with optional severity filter |
+| `findings` | Return findings from the last scan with severity filter and limit |
+| `scorecard` | Return the Zero Trust scorecard for the last scan |
+| `chains` | Return the attack-chain analysis for the last scan |
+| `arch_analysis` | Analyze architectural components and risks |
+| `initialize` / `tools/list` | Standard MCP handshake and tool enumeration |
 
 ### MCP Resources
 
-| URI                              | Description                                                 |
-| -------------------------------- | ----------------------------------------------------------- |
+| URI | Description |
+|-----|-------------|
+| `apeguard://reports/latest` | Latest scan report (markdown) |
+| `apeguard://scorecard/latest` | Latest Zero Trust scorecard |
+
+-------------------------------- | ----------------------------------------------------------- |
 | `apeguard://reports/{scan_id}`   | Full scan report                                            |
 | `apeguard://scorecard/{scan_id}` | Zero Trust scorecard                                        |
 | `apeguard://latest`              | Latest scan summary                                         |
@@ -428,7 +465,7 @@ You may use, copy, modify, and redistribute this software in any project — inc
 
 ## Related
 
-- [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — 8-pillar maturity model with quantitative scoring (what this tool implements)
+- [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — 12-pillar maturity model with quantitative scoring (what this tool implements)
 - [ApeGuard GitHub Action](https://github.com/pirateape/apeguard-action) — Run layered scans in CI/CD pipelines
 - [Azure Security Audit Framework](https://github.com/pirateape/Azure-Security) — 148+ Azure defense-in-depth resources (KQL, PowerShell, Policies, Workbooks)
 - [CISA Zero Trust Maturity Model](https://www.cisa.gov/zero-trust-maturity-model) — Foundational ZT framework from the US Federal government (UZTF builds on this)

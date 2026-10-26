@@ -70,6 +70,10 @@ feature-depth = 1
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
+    # unsafe-libyaml is unmaintained (RUSTSEC-2024-0449) and only reachable through
+    # serde_yaml, which we use solely to parse local ApeGuard config files. No known
+    # vulnerability; revisit when a maintained serde-based YAML parser lands.
+    { id = "RUSTSEC-2024-0449", reason = "unmaintained transitively via serde_yaml; local config parsing only, no known vulnerability" },
     #"RUSTSEC-0000-0000",
     #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
     #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
@@ -236,10 +240,10 @@ skip-tree = [
 [sources]
 # Lint level for what to happen when a crate from a crate registry that is not
 # in the allow list is encountered
-unknown-registry = "warn"
+unknown-registry = "deny"
 # Lint level for what to happen when a crate from a git repository that is not
 # in the allow list is encountered
-unknown-git = "warn"
+unknown-git = "deny"
 # List of URLs for allowed crate registries. Defaults to the crates.io index
 # if not specified. If it is specified but empty, no registries are allowed.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]

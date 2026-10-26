@@ -110,6 +110,18 @@ fn load_policy_files(policy_dir: &Path) -> Vec<(String, String)> {
         return Vec::new();
     }
 
+    let canonical_dir = match std::fs::canonicalize(policy_dir) {
+        Ok(dir) => dir,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to canonicalize policy directory '{}': {}",
+                policy_dir.display(),
+                e
+            );
+            return Vec::new();
+        }
+    };
+
     let mut policies = Vec::new();
 
     let entries = match std::fs::read_dir(policy_dir) {
@@ -126,19 +138,25 @@ fn load_policy_files(policy_dir: &Path) -> Vec<(String, String)> {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        // Reject path traversal outside the policy directory so an attacker who
-        // can write anywhere under `policy_dir` cannot load arbitrary .rego files.
-        if !path.starts_with(policy_dir) {
+        let canonical_path = match std::fs::canonicalize(&path) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("Skipping unresolvable policy '{}': {}", path.display(), e);
+                continue;
+            }
+        };
+        // Reject path or symlink traversal outside the canonical policy directory.
+        if !canonical_path.starts_with(&canonical_dir) {
             tracing::warn!("Skipping policy outside policy dir: {}", path.display());
             continue;
         }
-        if path.extension().and_then(|e| e.to_str()) == Some("rego") {
-            let name = path
+        if canonical_path.extension().and_then(|e| e.to_str()) == Some("rego") {
+            let name = canonical_path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown")
                 .to_string();
-            match std::fs::read_to_string(&path) {
+            match std::fs::read_to_string(&canonical_path) {
                 Ok(content) => {
                     policies.push((name, content));
                 }

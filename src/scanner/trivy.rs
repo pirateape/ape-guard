@@ -98,6 +98,8 @@ impl Scanner for Trivy {
     async fn scan_raw(&self, path: &Path) -> Result<Vec<u8>, ScannerError> {
         let scanners = self.mode_flag();
         let path_str = path.to_string_lossy().to_string();
+        crate::scanner::reject_flag_like_arg(&path_str)
+            .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
         let args = [
             "fs",
             "--scanners",

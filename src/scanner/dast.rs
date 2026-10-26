@@ -54,6 +54,9 @@ impl Scanner for DastScanner {
 
     async fn scan_raw(&self, _path: &Path) -> Result<Vec<u8>, ScannerError> {
         // `path` is unused — we use self.target (the web URL) instead.
+        crate::scanner::reject_flag_like_arg(&self.target)
+            .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
+
         // Run nuclei with JSON output
         let args = [
             "-target",

@@ -62,37 +62,14 @@ impl Scanner for Trufflehog {
     async fn scan_raw(&self, path: &Path) -> Result<Vec<u8>, ScannerError> {
         // Prevent argument injection: a filesystem target beginning with '-' could
         // be parsed as a trufflehog flag rather than a path.
-        crate::scanner::reject_flag_like_arg(&path.to_string_lossy())
+        let path_str = path.to_string_lossy().to_string();
+        crate::scanner::reject_flag_like_arg(&path_str)
             .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
 
         // TruffleHog filesystem scan outputs JSON Lines (NDJSON) to stdout.
         // Using --no-update to skip update checks and --json for JSON output.
-        let output = tokio::process::Command::new(&self.binary)
-            .arg("filesystem")
-            .arg(path.to_string_lossy().as_ref())
-            .arg("--json")
-            .arg("--no-update")
-            .output()
-            .await
-            .map_err(ScannerError::Io)?;
-
-        // TruffleHog exits 0 on success (even with findings, unlike Gitleaks)
-        if output.status.success() && !output.stdout.is_empty() {
-            return Ok(output.stdout);
-        }
-
-        // Check stderr for meaningful errors
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !stderr.trim().is_empty() {
-            // Some versions print banner to stderr, which is fine
-            // Only error if stdout is empty AND there's a real error
-            if output.stdout.is_empty() && !output.status.success() {
-                return Err(ScannerError::ExecutionFailed(stderr.trim().to_string()));
-            }
-        }
-
-        // No findings or empty output
-        Ok(output.stdout)
+        let args = ["filesystem", path_str.as_str(), "--json", "--no-update"];
+        crate::scanner::run_command_with_timeout(&self.binary, &args, 120).await
     }
 
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {

@@ -15,16 +15,20 @@
 #   11: AWS S3 (S3 bucket permission scanning)
 #   12: TLS Certificates (TLS certificate expiry/shadow auditing)
 #
-# Triggers: push to main/release, pull_request to main, weekly schedule (Sundays 08:00 UTC)
+# Triggers: push to main, pull_request to main, weekly schedule (Sundays 08:00 UTC)
 
 name: Security Integration
 on:
   push:
-    branches: [main, release/*]
+    branches: [main]
   pull_request:
     branches: [main]
   schedule:
     - cron: "0 8 * * 0"
+
+permissions:
+  contents: read
+  security-events: write
 
 env:
   SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -38,9 +42,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.91.1
         with:
           toolchain: ${{ env.RUST_VERSION }}
           profile: minimal
@@ -57,40 +63,38 @@ jobs:
           cargo install syft --locked || true
           cargo install checkov --locked || true
       - name: Build ApeGuard
-        run: cd ApeGuard && cargo build --release
+        run: cargo build --release
       - name: Run ApeGuard scan (Layers 1-7)
         run: |
-          cd ApeGuard
           cargo run --release -- scan \
             --layers 1,2,3,4,6,7 \
             --format sarif,md,html \
-            --output-dir ../.apeguard/reports
+            --output-dir .apeguard/reports-l1-l7
       - name: Run ApeGuard scan (Layers 8-12, opt-in)
         run: |
-          cd ApeGuard
           cargo run --release -- scan \
             --layers 8,9,10,11,12 \
             --context-drift \
             --format sarif,md \
-            --output-dir ../.apeguard/reports
+            --output-dir .apeguard/reports-l8-l12
       - name: Upload SARIF results
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: ApeGuard/.apeguard/reports/technical.sarif
+          sarif_file: .apeguard/reports-l1-l7/apeguard-report.sarif
           category: apeguard-layers-1-7
       - name: Upload TLS SARIF results
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: ApeGuard/.apeguard/reports/technical.sarif
+          sarif_file: .apeguard/reports-l8-l12/apeguard-report.sarif
           category: apeguard-layers-8-12
       - name: Upload reports artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: apeguard-reports
-          path: ApeGuard/.apeguard/reports/
+          path: .apeguard/reports*
           retention-days: 30
 
   # ─── MCP Security Scan (Layer 9 standalone) ───
@@ -99,14 +103,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Install uv (Python package manager)
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+        uses: astral-sh/setup-uv@v5
       - name: Install snyk-agent-scan (MCP security scanner)
         run: uvx snyk-agent-scan@latest --help || echo "snyk-agent-scan requires SNYK_TOKEN"
       - name: Scan MCP configs for tool poisoning
         run: |
-          # Check standard MCP config locations
           for conf in ~/.cursor/mcp.json ~/.vscode/mcp.json ~/.claude/mcp.json; do
             if [ -f "$conf" ]; then
               echo "=== Scanning MCP config: $conf ==="
@@ -134,12 +139,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Install checkov
         run: pip install checkov
       - name: Run checkov against Terraform configs
         run: |
-          for tf_dir in .terraform ../infrastructure ../iac ApeGuard ../ApeWall ../ArdentKey ../SentinelNet; do
+          for tf_dir in .terraform ../infrastructure ../iac . ../ApeWall ../ArdentKey ../SentinelNet; do
             if [ -d "$tf_dir" ]; then
               echo "=== Terraform audit: $tf_dir ==="
               checkov -d "$tf_dir" --compact --quiet 2>&1 || echo "checkov completed with findings"
@@ -147,7 +154,6 @@ jobs:
           done
       - name: Fail on critical findings
         run: |
-          # Check for critical findings in checkov output
           if grep -q "CRITICAL" /tmp/checkov-output.log 2>/dev/null; then
             echo "CRITICAL findings in Terraform configs"
             exit 1
@@ -160,7 +166,9 @@ jobs:
     timeout-minutes: 15
     if: ${{ secrets.ARDENTKEY_ENDPOINT != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -175,7 +183,7 @@ jobs:
             --output results.json 2>&1 || echo "red-team completed with findings"
       - name: Upload redteam report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: redteam-report
           path: results.json
@@ -188,13 +196,14 @@ jobs:
     timeout-minutes: 10
     if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Install AWS CLI
         run: curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install
       - name: Scan S3 buckets for public access
         run: |
           aws s3api list-buckets --query "Buckets[].{Name:Name,LastModified:LastModified}" --output json
-          # Check bucket ACLs for public access
           for bucket in $(aws s3api list-buckets --query "Buckets[].Name" --output text); do
             echo "=== Checking bucket: $bucket ==="
             aws s3api get-bucket-acl --bucket "$bucket" --query "Owner" --output json 2>&1
@@ -207,7 +216,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Install openssl
         run: sudo apt-get update && sudo apt-get install -y openssl
       - name: Check local certs for expiry
@@ -220,7 +231,6 @@ jobs:
           done
       - name: Fail on expired certs
         run: |
-          # Check for expired certs in openssl output
           for cert in /etc/ssl/certs/*.pem; do
             if [ -f "$cert" ]; then
               if ! openssl x509 -checkend 0 -in "$cert" -noout 2>/dev/null; then

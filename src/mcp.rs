@@ -54,6 +54,85 @@ fn load_cached_findings() -> anyhow::Result<Option<(String, Vec<CanonicalFinding
     cache.get_latest_scan_findings()
 }
 
+/// Maximum allowed size of a single JSON-RPC request line on stdio (1 MiB)
+const MAX_MCP_LINE_BYTES: usize = 1024 * 1024;
+
+/// Validate an MCP filesystem target path against flag injection and parent-directory traversal.
+fn validate_mcp_target_path(target: &str) -> anyhow::Result<PathBuf> {
+    crate::scanner::reject_flag_like_arg(target)?;
+    let path = PathBuf::from(target);
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        anyhow::bail!("refusing target path containing parent traversal ('..'): {target}");
+    }
+    Ok(path)
+}
+
+/// Validate an MCP DAST web target URL against flag injection and SSRF to internal/loopback hosts.
+fn validate_mcp_web_target(url: &str) -> anyhow::Result<()> {
+    crate::scanner::reject_flag_like_arg(url)?;
+    let lower = url.trim().to_lowercase();
+    let rest = if let Some(r) = lower.strip_prefix("https://") {
+        r
+    } else if let Some(r) = lower.strip_prefix("http://") {
+        r
+    } else {
+        anyhow::bail!("web target must use http:// or https:// scheme: {url}");
+    };
+
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = authority.rsplit('@').next().unwrap_or(authority);
+    let host = if host_port.starts_with('[') {
+        host_port
+            .split(']')
+            .next()
+            .unwrap_or(host_port)
+            .trim_start_matches('[')
+    } else {
+        host_port.split(':').next().unwrap_or(host_port)
+    };
+
+    if host.is_empty() {
+        anyhow::bail!("web target URL is missing host: {url}");
+    }
+
+    if host == "localhost"
+        || host.ends_with(".localhost")
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
+        || host == "::1"
+        || host == "0:0:0:0:0:0:0:1"
+        || host.starts_with("fe80:")
+        || host.starts_with("fc")
+        || host.starts_with("fd")
+    {
+        anyhow::bail!("refusing SSRF web target pointing to internal/loopback host: {host}");
+    }
+
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        let is_blocked = match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_broadcast()
+                    || v4.is_unspecified()
+                    || v4.octets()[0] == 100 && (v4.octets()[1] & 0b1100_0000) == 64
+            }
+            std::net::IpAddr::V6(v6) => {
+                v6.is_loopback() || v6.is_unspecified() || (v6.segments()[0] & 0xfe00) == 0xfc00
+            }
+        };
+        if is_blocked {
+            anyhow::bail!("refusing SSRF web target pointing to non-public IP: {ip}");
+        }
+    }
+
+    Ok(())
+}
+
 /// Run the MCP server — reads JSON-RPC requests from stdin and writes responses to stdout.
 pub async fn serve() -> anyhow::Result<()> {
     let stdin = io::stdin();
@@ -65,6 +144,19 @@ pub async fn serve() -> anyhow::Result<()> {
 
     for line in stdin.lock().lines() {
         let line = line?;
+        if line.len() > MAX_MCP_LINE_BYTES {
+            let err_resp = json!({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32600,
+                    "message": format!("Request exceeds maximum allowed size ({} bytes)", MAX_MCP_LINE_BYTES)
+                },
+                "id": null
+            });
+            writeln!(stdout, "{}", serde_json::to_string(&err_resp)?)?;
+            stdout.flush()?;
+            continue;
+        }
         if line.trim().is_empty() {
             continue;
         }
@@ -399,6 +491,7 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
             }
             5 => {
                 if let Some(url) = web_target.as_deref() {
+                    validate_mcp_web_target(url)?;
                     scanners.push(Box::new(DastScanner::new(url)));
                 } else {
                     warnings.push("Layer 5 requested but no web target provided. Use arguments.web=\"https://example.com\".".to_string());
@@ -435,7 +528,7 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
         }
     }
 
-    let target_path = PathBuf::from(target);
+    let target_path = validate_mcp_target_path(target)?;
     let mut all_findings: Vec<CanonicalFinding> = Vec::new();
     let mut scanners_used: Vec<String> = Vec::new();
 
@@ -634,7 +727,7 @@ async fn handle_chains_tool() -> anyhow::Result<Value> {
 /// Handle the architecture analysis tool.
 async fn handle_arch_tool(args: &Value) -> anyhow::Result<Value> {
     let target = args["target"].as_str().unwrap_or(".");
-    let target_path = PathBuf::from(target);
+    let target_path = validate_mcp_target_path(target)?;
 
     let artifacts = crate::arch::discover_artifacts(&target_path);
 
@@ -934,5 +1027,29 @@ mod tests {
             .expect("mcp test: failed to create tokio runtime")
             .block_on(handle_request(line));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_mcp_target_path_rejects_flags_and_traversal() {
+        assert!(validate_mcp_target_path(".").is_ok());
+        assert!(validate_mcp_target_path("src/scanner").is_ok());
+        assert!(validate_mcp_target_path("--config=/etc/passwd").is_err());
+        assert!(validate_mcp_target_path("-v").is_err());
+        assert!(validate_mcp_target_path("../secret").is_err());
+        assert!(validate_mcp_target_path("foo/../../bar").is_err());
+    }
+
+    #[test]
+    fn test_validate_mcp_web_target_blocks_ssrf_and_flags() {
+        assert!(validate_mcp_web_target("https://example.com").is_ok());
+        assert!(validate_mcp_web_target("http://93.184.216.34:8080/api").is_ok());
+        assert!(validate_mcp_web_target("-target").is_err());
+        assert!(validate_mcp_web_target("file:///etc/passwd").is_err());
+        assert!(validate_mcp_web_target("http://localhost:8080").is_err());
+        assert!(validate_mcp_web_target("http://127.0.0.1:11434").is_err());
+        assert!(validate_mcp_web_target("http://169.254.169.254/latest/meta-data/").is_err());
+        assert!(validate_mcp_web_target("http://10.0.0.1/admin").is_err());
+        assert!(validate_mcp_web_target("http://192.168.1.1/").is_err());
+        assert!(validate_mcp_web_target("http://[::1]:8000").is_err());
     }
 }

@@ -161,6 +161,9 @@ async fn main() -> anyhow::Result<()> {
                     tracing::warn!("Failed to record scan in cache: {}", e);
                 }
             }
+            if scan_output.fail_threshold_reached {
+                std::process::exit(1);
+            }
         }
         cli::Command::Report {
             path,

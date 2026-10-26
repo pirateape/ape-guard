@@ -68,6 +68,22 @@ jobs:
           # Generate per-binary checksum
           sha256sum "dist/${BINARY_NAME}-${{ matrix.target }}${{ matrix.suffix }}" > "dist/${BINARY_NAME}-${{ matrix.target }}${{ matrix.suffix }}.sha256"
 
+      - name: Sign binary (Linux only)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+              --detach-sign --armor "dist/${BINARY_NAME}-${{ matrix.target }}${{ matrix.suffix }}"
+            echo "✅ Binary signed with GPG"
+          else
+            echo "⚠️ GPG_PRIVATE_KEY not set — skipping signature"
+          fi
+
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -96,6 +112,21 @@ jobs:
         run: |
           find artifacts -type f -name '*.sha256' -exec cat {} \; | sort > artifacts/checksums.txt
           find artifacts -type f ! -name '*.sha256' -exec sha256sum {} \; | sort >> artifacts/checksums.txt
+
+      - name: Generate GPG signature of checksums
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+              --detach-sign --armor artifacts/checksums.txt
+            echo "✅ Checksums signed with GPG"
+          else
+            echo "⚠️ GPG_PRIVATE_KEY not set — skipping signature"
+          fi
 
       - name: Generate provenance attestation
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0

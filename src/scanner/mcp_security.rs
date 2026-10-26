@@ -61,6 +61,8 @@ impl Scanner for McpScanner {
     }
 
     async fn scan_raw(&self, _path: &Path) -> Result<Vec<u8>, ScannerError> {
+        crate::scanner::reject_flag_like_arg(&self.config_path)
+            .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
         if crate::scanner::binary_exists("snyk-agent-scan") {
             super::run_command_with_timeout("snyk-agent-scan", &["--json", &self.config_path], 60)
                 .await

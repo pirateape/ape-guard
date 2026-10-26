@@ -60,6 +60,8 @@ impl Scanner for AwsS3Scanner {
     }
 
     async fn scan_raw(&self, _path: &Path) -> Result<Vec<u8>, ScannerError> {
+        crate::scanner::reject_flag_like_arg(&self.config_path)
+            .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
         if crate::scanner::binary_exists("aws") && std::env::var("AWS_ACCESS_KEY_ID").is_ok() {
             super::run_command_with_timeout("aws", &["s3api", "list-buckets"], 60).await
         } else {

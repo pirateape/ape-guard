@@ -22,7 +22,7 @@ tags:
   ]
 version: "1.0"
 author: APE-Brain
-license: MIT
+license: Elastic-2.0
 user_invocable: true
 ---
 
