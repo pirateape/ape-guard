@@ -42,11 +42,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.91.1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1.91.1
         with:
           toolchain: ${{ env.RUST_VERSION }}
           profile: minimal
@@ -79,13 +79,13 @@ jobs:
             --output-dir .apeguard/reports-l8-l12
       - name: Upload SARIF results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: .apeguard/reports-l1-l7/apeguard-report.sarif
           category: apeguard-layers-1-7
       - name: Upload TLS SARIF results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: .apeguard/reports-l8-l12/apeguard-report.sarif
           category: apeguard-layers-8-12
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Install uv (Python package manager)
@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Install checkov
@@ -164,25 +164,25 @@ jobs:
     name: LLM Red-Team (ArdentKey)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: ${{ secrets.ARDENTKEY_ENDPOINT != '' }}
+    # NOTE: `secrets` is not allowed in job-level `if:` (GitHub rejects the
+    # workflow at parse time -> 0s "workflow file issue"). Gate at step level
+    # via job env instead.
+    env:
+      ARDENTKEY_ENDPOINT: ${{ secrets.ARDENTKEY_ENDPOINT }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Install promptfoo
-        run: npm install -g promptfoo
-      - name: Run LLM red-team
+      - name: Run LLM red-team (skipped when ARDENTKEY_ENDPOINT is not configured)
+        if: env.ARDENTKEY_ENDPOINT != ''
         run: |
+          npm install -g promptfoo
           promptfoo redteam run \
-            --target "${{ secrets.ARDENTKEY_ENDPOINT }}" \
+            --target "$ARDENTKEY_ENDPOINT" \
             --fail-on critical \
             --output results.json 2>&1 || echo "red-team completed with findings"
       - name: Upload redteam report
-        if: always()
+        if: always() && env.ARDENTKEY_ENDPOINT != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: redteam-report
@@ -194,15 +194,18 @@ jobs:
     name: AWS S3 Scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+    # NOTE: `secrets` is not allowed in job-level `if:`; gate at step level.
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: Install AWS CLI
-        run: curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install
-      - name: Scan S3 buckets for public access
+      - name: Install AWS CLI and scan S3 buckets (skipped when no AWS credentials)
+        if: env.AWS_ACCESS_KEY_ID != ''
         run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install |
           aws s3api list-buckets --query "Buckets[].{Name:Name,LastModified:LastModified}" --output json
           for bucket in $(aws s3api list-buckets --query "Buckets[].Name" --output text); do
             echo "=== Checking bucket: $bucket ==="
@@ -216,7 +219,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Install openssl
