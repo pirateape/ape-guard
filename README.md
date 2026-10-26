@@ -237,7 +237,7 @@ Example: `AG-GL-20260531-a1b2c3d4-001`
 
 ## Zero Trust Framework Mapping
 
-ApeGuard implements the [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — an 12-pillar maturity model that builds on the [CISA Zero Trust Maturity Model](https://www.cisa.gov/zero-trust-maturity-model) as its foundational stepping stone.
+ApeGuard implements the [Unified Zero Trust Framework (UZTF)](https://github.com/pirateape/unified-zero-trust-framework) — a 12-pillar maturity model that builds on the [CISA Zero Trust Maturity Model](https://www.cisa.gov/zero-trust-maturity-model) as its foundational stepping stone.
 
 > **UZTF** adds quantitative scoring and automated gap analysis on top of CISA's strategic maturity tiers. CISA defines _what_ Zero Trust looks like; UZTF defines _how to measure and achieve it_.
 

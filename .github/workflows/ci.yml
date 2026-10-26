@@ -73,7 +73,9 @@ jobs:
           # Grandfather clause: commits authored before 2026-10-26 (DCO policy
           # adoption) are exempt, so legacy branches stay mergeable. New work
           # must be signed off with `git commit -s`.
-          commits=$(git log --format='%H' origin/main..HEAD)
+          # --no-merges: GitHub's synthetic PR merge ref is unsigned and would
+          # false-fail every PR; only developer commits are checked.
+          commits=$(git log --no-merges --format='%H' origin/main..HEAD)
           missing=0
           for commit in $commits; do
             ad=$(git log -1 --format='%ad' --date=short "$commit")

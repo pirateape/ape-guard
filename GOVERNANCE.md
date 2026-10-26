@@ -2,7 +2,7 @@
 
 ## Overview
 
-ApeGuard is an open-source security scanning tool maintained under the Elastic License 2.0 (ELv2).
+ApeGuard is a source-available security scanning tool maintained under the Elastic License 2.0 (ELv2).
 This document defines the project's governance structure, decision-making process,
 and maintainer responsibilities.
 
