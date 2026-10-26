@@ -28,7 +28,7 @@ which = "8.0"
 regex = "1"
 
 # Cache
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 # Templates
 tera = "1"
