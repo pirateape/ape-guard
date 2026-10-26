@@ -156,9 +156,13 @@ async fn main() -> anyhow::Result<()> {
                     total_findings: scan_output.findings.len() as u32,
                     scanners_used: &scan_output.scanners_used,
                     findings: &scan_output.findings,
+                    store_findings: cfg.cache.store_findings,
                 }) {
                     tracing::warn!("Failed to record scan in cache: {}", e);
                 }
+            }
+            if scan_output.fail_threshold_reached {
+                std::process::exit(1);
             }
         }
         cli::Command::Report {
@@ -377,11 +381,6 @@ async fn run_report(
                 None,
                 None,
             )?,
-            cli::OutputFormat::Pdf => {
-                // PDF not yet implemented, skip
-                tracing::warn!("PDF output format not yet implemented");
-                continue;
-            }
         };
         report_paths.push(path);
     }

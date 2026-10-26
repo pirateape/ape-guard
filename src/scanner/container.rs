@@ -56,6 +56,9 @@ impl Scanner for ContainerScanner {
         // `path` is unused for container scanning — we use self.image instead.
         let _ = path;
 
+        crate::scanner::reject_flag_like_arg(&self.image)
+            .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
+
         let args = ["image", self.image.as_str(), "--format", "json", "--quiet"];
         crate::scanner::run_command_with_timeout(&self.binary, &args, 120).await
     }

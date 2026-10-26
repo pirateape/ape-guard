@@ -11,6 +11,7 @@
 //
 // Pipeline insertion point: after dedup, before FP filter (in main.rs)
 use crate::find::CanonicalFinding;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -38,7 +39,8 @@ pub struct ReachabilityResult {
 }
 
 /// Configuration for reachability analysis
-#[derive(Debug, Clone)]
+/// Canonical definition; also referenced by `config::Config`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReachabilityConfig {
     /// Master switch — opt-in (default: false)
     pub enabled: bool,

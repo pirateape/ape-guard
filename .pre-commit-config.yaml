@@ -72,7 +72,7 @@ repos:
 
       - id: cargo-audit
         name: cargo audit
-        entry: bash -c 'cargo audit --deny warnings 2>&1 | head -50 || true'
+        entry: bash -c 'cargo audit --deny warnings'
         language: system
         types: [rust]
         always_run: true
@@ -80,7 +80,7 @@ repos:
 
       - id: cargo-machete
         name: cargo machete
-        entry: bash -c 'cargo machete 2>&1 | head -30 || true'
+        entry: bash -c 'cargo machete'
         language: system
         types: [rust]
         always_run: true

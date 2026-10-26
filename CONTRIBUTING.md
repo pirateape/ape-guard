@@ -13,6 +13,17 @@ Thanks for your interest in contributing.
 1. Open an issue first for non-trivial changes.
 2. Ensure `cargo test` passes and `cargo fmt --check` is clean.
 3. Keep PRs focused — one change per PR.
+4. **Add tests for new functionality** — all major new features must include unit or integration tests.
+5. **DCO sign-off** — all commits must include a `Signed-off-by` line. Use `git commit -s` to add it automatically.
+
+## Coding standards
+
+- Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
+- Use `cargo clippy -- -D warnings` — zero warnings policy
+- Use `cargo fmt --check` — consistent formatting
+- Prefer `Result` and `Option` over `unwrap()` / `expect()` in library code
+- Document all public items with `///` doc-comments
+- Keep functions small and focused — extract helpers when >50 lines
 
 ## Code of Conduct
 

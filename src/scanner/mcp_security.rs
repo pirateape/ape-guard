@@ -3,6 +3,7 @@
 // Uses Invariant Labs' mcp-scan (snyk-agent-scan) when available, falls back to manual inspection
 use super::{Scanner, ScannerError};
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
+use crate::scanner::generate_finding_id;
 use async_trait::async_trait;
 use std::path::Path;
 
@@ -60,6 +61,8 @@ impl Scanner for McpScanner {
     }
 
     async fn scan_raw(&self, _path: &Path) -> Result<Vec<u8>, ScannerError> {
+        crate::scanner::reject_flag_like_arg(&self.config_path)
+            .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
         if crate::scanner::binary_exists("snyk-agent-scan") {
             super::run_command_with_timeout("snyk-agent-scan", &["--json", &self.config_path], 60)
                 .await
@@ -95,8 +98,6 @@ impl Scanner for McpScanner {
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         let output = String::from_utf8_lossy(raw);
         let mut findings = Vec::new();
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
 
         // Parse snyk-agent-scan JSON output if available
         if output.contains("[{") || output.contains("[ {") {
@@ -125,7 +126,7 @@ impl Scanner for McpScanner {
                         };
 
                         findings.push(CanonicalFinding {
-                            id: format!("AG-MCP-{}-{}-{:04}", now, &nonce[..8], i + 1),
+                            id: generate_finding_id("AG-MCP", i),
                             scanner: ScannerType::McpSecurity,
                             scanner_version: None,
                             rule_id: vuln_id.to_string(),
@@ -181,7 +182,7 @@ impl Scanner for McpScanner {
                 };
 
                 findings.push(CanonicalFinding {
-                    id: format!("AG-MCP-{}-{}-{:04}", now, &nonce[..8], findings.len() + 1),
+                    id: generate_finding_id("AG-MCP", findings.len()),
                     scanner: ScannerType::McpSecurity,
                     scanner_version: None,
                     rule_id: rule_id.to_string(),

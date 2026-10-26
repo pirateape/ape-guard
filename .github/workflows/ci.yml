@@ -58,3 +58,123 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --check
+
+  check-dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check DCO sign-off
+        run: |
+          # All commits in the PR must have Signed-off-by.
+          # Grandfather clause: commits authored before 2026-10-26 (DCO policy
+          # adoption) are exempt, so legacy branches stay mergeable. New work
+          # must be signed off with `git commit -s`.
+          # --no-merges: GitHub's synthetic PR merge ref is unsigned and would
+          # false-fail every PR; only developer commits are checked.
+          commits=$(git log --no-merges --format='%H' origin/main..HEAD)
+          missing=0
+          for commit in $commits; do
+            ad=$(git log -1 --format='%ad' --date=short "$commit")
+            if [ "$ad" '<' '2026-10-26' ]; then
+              echo "ℹ️  Grandfathered (pre-policy): $commit"
+              continue
+            fi
+            if ! git log -1 --format='%B' "$commit" | grep -q '^Signed-off-by:'; then
+              echo "❌ Commit $commit missing DCO sign-off"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo ""
+            echo "All commits must include a DCO sign-off."
+            echo "Use: git commit -s"
+            echo "See CONTRIBUTING.md for details."
+            exit 1
+          fi
+          echo "✅ All commits have DCO sign-off"
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.91.1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-tarpaulin
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
+
+      - name: Run coverage
+        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml --output-dir coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: coverage/
+
+  security-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.91.1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-deny and cargo-machete
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-machete
+
+      - name: Run cargo-deny supply-chain check
+        run: cargo deny check
+
+      - name: Run cargo-machete unused dependency check
+        run: cargo machete
+
+  reproducible-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.91.1
+        with:
+          toolchain: stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Build binary (first pass)
+        run: cargo build --release
+      - name: Save first binary hash
+        run: sha256sum target/release/apeguard | cut -d' ' -f1 > /tmp/build1.sha256
+
+      - name: Clean and rebuild
+        run: cargo clean && cargo build --release
+      - name: Save second binary hash
+        run: sha256sum target/release/apeguard | cut -d' ' -f1 > /tmp/build2.sha256
+
+      - name: Compare builds
+        run: |
+          if [ "$(cat /tmp/build1.sha256)" = "$(cat /tmp/build2.sha256)" ]; then
+            echo "✅ Reproducible build verified — binaries are identical"
+          else
+            echo "❌ Build is NOT reproducible"
+            echo "Build 1: $(cat /tmp/build1.sha256)"
+            echo "Build 2: $(cat /tmp/build2.sha256)"
+            exit 1
+          fi

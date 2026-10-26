@@ -1,6 +1,9 @@
 // ApeGuard Configuration
 // Loads and merges configuration from: defaults → file → environment variables → CLI flags
 use crate::cli;
+use crate::llm::LlmConfig;
+use crate::reachability::ReachabilityConfig;
+use crate::stride::StrideConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -91,74 +94,6 @@ impl Default for FilterConfig {
     }
 }
 
-/// Reachability analysis configuration.
-/// Determines which source files are transitively reachable from entry points.
-/// Findings in unreachable (dead) code can be flagged as lower risk.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReachabilityConfig {
-    /// Master switch — reachability analysis is opt-in (default: false)
-    pub enabled: bool,
-    /// User-specified entry point file paths (relative to target directory)
-    pub entry_points: Vec<String>,
-    /// File extensions to include in analysis
-    pub include_extensions: Vec<String>,
-    /// Directories to exclude from analysis (relative names)
-    pub exclude_dirs: Vec<String>,
-}
-
-impl Default for ReachabilityConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            entry_points: vec![],
-            include_extensions: vec![
-                "rs".to_string(),
-                "py".to_string(),
-                "js".to_string(),
-                "ts".to_string(),
-                "tsx".to_string(),
-                "jsx".to_string(),
-                "go".to_string(),
-                "c".to_string(),
-                "cpp".to_string(),
-                "h".to_string(),
-                "hpp".to_string(),
-            ],
-            exclude_dirs: vec![
-                ".git".to_string(),
-                "node_modules".to_string(),
-                "target".to_string(),
-                ".apeguard".to_string(),
-                "vendor".to_string(),
-                "__pycache__".to_string(),
-                ".venv".to_string(),
-                "venv".to_string(),
-                "dist".to_string(),
-                "build".to_string(),
-            ],
-        }
-    }
-}
-
-/// STRIDE threat model coverage analysis configuration (Phase 2.1).
-/// Maps findings to the six STRIDE categories and identifies coverage gaps.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StrideConfig {
-    /// Master switch — STRIDE analysis is opt-in (default: false)
-    pub enabled: bool,
-    /// Minimum coverage ratio (0.0–1.0) for a category to be considered "covered"
-    pub coverage_threshold: f64,
-}
-
-impl Default for StrideConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            coverage_threshold: 0.05,
-        }
-    }
-}
-
 /// Context drift detection configuration (Layer 8)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextDriftConfig {
@@ -180,6 +115,14 @@ impl Default for ContextDriftConfig {
     }
 }
 
+/// Scanner binary paths.
+///
+/// **Trust boundary:** each value is executed as a command via
+/// `std::process`/`tokio::process` (see `scanner/mod.rs`). Values are merged from
+/// `.apeguard.yaml`, so a malicious or mis-authored config can point, e.g.,
+/// `binaries.trivy` at an attacker-controlled binary that then runs with ApeGuard's
+/// scan arguments. Treat `binaries.*` as untrusted input and prefer pinned,
+/// verified paths (or `--binaries`-style overrides) in shared/CI environments.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScannerBinaries {
     pub gitleaks: Option<String>,
@@ -195,33 +138,24 @@ pub struct CacheConfig {
     pub enabled: bool,
     pub path: PathBuf,
     pub ttl_hours: u32,
+    /// Store the full findings snapshot in the cache.
+    ///
+    /// Default `true` (non-breaking): the `report --snapshot` and `compare`
+    /// commands depend on the stored findings. Set to `false` to store only
+    /// scan metadata (count, scanners, timestamps) and save disk space on
+    /// large repos with many findings.
+    #[serde(default = "default_store_findings")]
+    pub store_findings: bool,
+}
+
+fn default_store_findings() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReportConfig {
     pub formats: Vec<String>,
     pub types: Vec<String>,
-}
-
-/// LLM remediation settings — mirrors llm::LlmConfig to keep config serialisable
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmConfig {
-    /// Ollama endpoint (default: http://localhost:11434)
-    pub endpoint: String,
-    /// Model name (default: codellama)
-    pub model: String,
-    /// Whether LLM enhancement is enabled
-    pub enabled: bool,
-}
-
-impl Default for LlmConfig {
-    fn default() -> Self {
-        LlmConfig {
-            endpoint: "http://localhost:11434".to_string(),
-            model: "codellama".to_string(),
-            enabled: true,
-        }
-    }
 }
 
 impl Default for Config {
@@ -241,6 +175,7 @@ impl Default for Config {
                 enabled: true,
                 path: PathBuf::from(".apeguard/cache"),
                 ttl_hours: 24,
+                store_findings: true,
             },
             report: ReportConfig {
                 formats: vec!["md".to_string()],
@@ -328,14 +263,17 @@ pub fn load(args: &cli::Args) -> anyhow::Result<Config> {
     Ok(cfg)
 }
 
-/// Merge a partial config into the current one (non-destructive overlay)
+/// Merge a partial config into the current one (non-destructive overlay).
 fn merge(base: &mut Config, overlay: Config) {
+    // Only override layers when the overlay provides explicitly (non-empty vector)
     if !overlay.layers.is_empty() {
         base.layers = overlay.layers;
     }
+    // Override severity only when explicitly set (non-default "all")
     if overlay.severity != "all" {
         base.severity = overlay.severity;
     }
+    // Scanner binary paths — overlay takes precedence when Some
     if overlay.binaries.gitleaks.is_some() {
         base.binaries.gitleaks = overlay.binaries.gitleaks;
     }
@@ -354,18 +292,24 @@ fn merge(base: &mut Config, overlay: Config) {
     if overlay.binaries.syft.is_some() {
         base.binaries.syft = overlay.binaries.syft;
     }
-    if overlay.cache.enabled != base.cache.enabled {
-        base.cache.enabled = overlay.cache.enabled;
-    }
-    if overlay.cache.path.as_path() != std::path::Path::new(".apeguard/cache") {
-        base.cache.path = overlay.cache.path;
-    }
-    if overlay.cache.ttl_hours != 24 {
-        base.cache.ttl_hours = overlay.cache.ttl_hours;
-    }
-    if overlay.report.formats != vec!["md"] {
-        base.report.formats = overlay.report.formats;
-    }
+    // Cache settings
+    base.cache = overlay.cache;
+    // Report settings (formats/types always taken from overlay)
+    base.report = overlay.report;
+    // LLM settings
+    base.llm = overlay.llm;
+    // Context drift settings
+    base.context_drift = overlay.context_drift;
+    // Filters
+    base.filters = overlay.filters;
+    // Reachability
+    base.reachability = overlay.reachability;
+    // STRIDE
+    base.stride = overlay.stride;
+    // Policy
+    base.policy = overlay.policy;
+    // Output directory
+    base.output_dir = overlay.output_dir;
 }
 
 /// Generate a default .apeguard.yaml config file

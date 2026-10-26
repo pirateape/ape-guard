@@ -1,0 +1,16 @@
+Adopted onto the ICM framework on 2026-10-19 by scripts/adopt-project.sh (ADR-0007).
+Added:
+  - CLAUDE.md (@AGENTS.md)
+  - skills/README.md (skills home)
+  - skills/icm-adr/ (base skill)
+  - skills/icm-context/ (base skill)
+  - skills/icm-contract/ (base skill)
+  - skills/icm-problem-solving/ (base skill)
+  - skills/icm-research/ (base skill)
+  - skills/icm-sync/ (base skill)
+  - docs/adr/0001-record-architecture-decisions.md
+  - docs/adr/README.md (ADR index)
+  - docs/research/README.md
+  - .gitignore (appended: node_modules/ *.log .env* !/.env.example !.env.*.template)
+This marker makes future adopt runs verification-only (no re-generation).
+Delete this file to re-enable adopt offers.

@@ -3,6 +3,7 @@
 // Uses checkov/tfsec/Terrascan when available
 use super::{Scanner, ScannerError};
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
+use crate::scanner::generate_finding_id;
 use async_trait::async_trait;
 use std::path::Path;
 
@@ -72,6 +73,8 @@ impl Scanner for TerraformScanner {
     }
 
     async fn scan_raw(&self, _path: &Path) -> Result<Vec<u8>, ScannerError> {
+        crate::scanner::reject_flag_like_arg(&self.terraform_dir)
+            .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
         if crate::scanner::binary_exists("checkov") {
             super::run_command_with_timeout(
                 "checkov",
@@ -125,8 +128,6 @@ impl Scanner for TerraformScanner {
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         let output = String::from_utf8_lossy(raw);
         let mut findings = Vec::new();
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
 
         // Parse checkov JSON output if available
         if output.contains("failed_checks") {
@@ -171,7 +172,7 @@ impl Scanner for TerraformScanner {
                     };
 
                     findings.push(CanonicalFinding {
-                        id: format!("AG-TF-{}-{}-{:04}", now, &nonce[..8], i + 1),
+                        id: generate_finding_id("AG-TF", i),
                         scanner: ScannerType::TerraformIaC,
                         scanner_version: None,
                         rule_id: f.check_id.clone(),
@@ -237,7 +238,7 @@ impl Scanner for TerraformScanner {
                 };
 
                 findings.push(CanonicalFinding {
-                    id: format!("AG-TF-{}-{}-{:04}", now, &nonce[..8], findings.len() + 1),
+                    id: generate_finding_id("AG-TF", findings.len()),
                     scanner: ScannerType::TerraformIaC,
                     scanner_version: None,
                     rule_id: format!("TF{:03}", findings.len() + 1),

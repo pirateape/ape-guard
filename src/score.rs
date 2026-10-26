@@ -8,8 +8,6 @@
 use crate::find::{
     AttackChain, CanonicalFinding, GradeVerdict, RiskDimensions, Severity, UnifiedRiskScore,
 };
-use serde::Serialize;
-use std::collections::HashMap;
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -292,127 +290,6 @@ fn compute_score_confidence(finding: &CanonicalFinding) -> f32 {
     // Average all factors
     let sum: f32 = factors.iter().sum();
     (sum / factors.len() as f32).min(1.0)
-}
-
-// ─── Scan Health Score ────────────────────────────────────────────────────────
-
-/// Overall scan health score (0-1000).
-#[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)] // P3/P4: health scoring not yet integrated into main scan pipeline
-pub struct ScanHealthScore {
-    /// Overall health (0 = worst, 1000 = best)
-    pub overall: u32,
-    /// Per-dimension health breakdown
-    pub dimensions: ScanHealthDimensions,
-    /// Trend direction (if historical data available)
-    pub trend: Option<ScoreTrend>,
-}
-
-/// Breakdown of metrics that compose the overall scan health score.
-#[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)] // P3/P4: health scoring not yet integrated into main scan pipeline
-pub struct ScanHealthDimensions {
-    /// Sum of all finding risk scores
-    pub total_risk_burden: f32,
-    /// Percentage of findings that are critical severity
-    pub critical_finding_density: f32,
-    /// Average risk per scanner
-    pub scanner_risk: HashMap<String, f32>,
-    /// ZT maturity score (0-800)
-    pub zt_maturity: u32,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[expect(dead_code)] // P3/P4: ScoreTrend variants populated for health trend reporting; not yet integrated
-/// Direction of change in scan health over successive runs.
-pub enum ScoreTrend {
-    /// Health score is increasing
-    Improving,
-    /// Health score is unchanged
-    Stable,
-    /// Health score is decreasing
-    Declining,
-}
-
-/// Compute the overall scan health score.
-///
-/// Formula: 1000 - penalties for risk burden, critical density, and volume.
-/// 1000 = perfect security posture. 0 = worst possible.
-#[allow(dead_code)] // P3/P4: health scoring not yet integrated into main scan pipeline
-pub fn compute_scan_health(
-    findings: &[CanonicalFinding],
-    scanners_used: &[String],
-    zt_maturity: u32,
-) -> ScanHealthScore {
-    let total_count = findings.len() as f32;
-
-    if total_count == 0.0 {
-        return ScanHealthScore {
-            overall: 1000,
-            dimensions: ScanHealthDimensions {
-                total_risk_burden: 0.0,
-                critical_finding_density: 0.0,
-                scanner_risk: HashMap::new(),
-                zt_maturity,
-            },
-            trend: None,
-        };
-    }
-
-    let total_risk: f32 = findings
-        .iter()
-        .filter_map(|f| f.risk_score.as_ref())
-        .map(|r| r.overall)
-        .sum();
-
-    let critical_count = findings
-        .iter()
-        .filter(|f| matches!(f.severity, Severity::Critical))
-        .count() as f32;
-
-    let avg_risk = total_risk / total_count;
-    let critical_density = critical_count / total_count;
-    let volume_penalty = (total_count.min(200.0) / 200.0) * 100.0;
-
-    let raw_health = 1000.0
-        - (avg_risk * 400.0) // Up to 400 pts from average risk
-        - (critical_density * 300.0) // Up to 300 pts from critical severity density
-        - volume_penalty; // Up to 100 pts from finding volume
-
-    let overall = raw_health.clamp(0.0, 1000.0) as u32;
-
-    // Per-scanner risk averages
-    let mut scanner_risk: HashMap<String, f32> = HashMap::new();
-    for scanner_name in scanners_used {
-        let scanner_findings: Vec<&CanonicalFinding> = findings
-            .iter()
-            .filter(|f| f.scanner.to_string() == *scanner_name)
-            .collect();
-
-        let avg = if !scanner_findings.is_empty() {
-            let sum: f32 = scanner_findings
-                .iter()
-                .filter_map(|f| f.risk_score.as_ref())
-                .map(|r| r.overall)
-                .sum();
-            sum / scanner_findings.len() as f32
-        } else {
-            0.0
-        };
-
-        scanner_risk.insert(scanner_name.clone(), (avg * 100.0).round() / 100.0);
-    }
-
-    ScanHealthScore {
-        overall,
-        dimensions: ScanHealthDimensions {
-            total_risk_burden: (total_risk * 100.0).round() / 100.0,
-            critical_finding_density: (critical_density * 100.0).round() / 100.0,
-            scanner_risk,
-            zt_maturity,
-        },
-        trend: None,
-    }
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -834,71 +711,6 @@ mod tests {
                     .expect("score 2 should be scored")
                     .overall
         );
-    }
-
-    // ─── Scan Health Tests ────────────────────────────────────────────────
-
-    #[test]
-    fn test_scan_health_no_findings() {
-        let health = compute_scan_health(&[], &["gitleaks".into()], 400);
-        assert_eq!(health.overall, 1000);
-        assert!((health.dimensions.total_risk_burden - 0.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_scan_health_with_findings() {
-        let mut findings = vec![
-            make_finding("F-1", Severity::Critical, "src/main.rs", 0, 0, None),
-            make_finding("F-2", Severity::High, "src/main.rs", 0, 0, None),
-        ];
-        let chains = vec![];
-        score_all_findings(&mut findings, &chains, &ScoreWeights::default());
-
-        let health = compute_scan_health(&findings, &["gitleaks".into()], 300);
-        assert!(health.overall < 1000);
-        assert!(health.dimensions.total_risk_burden > 0.0);
-        assert!(health.overall > 0);
-    }
-
-    #[test]
-    fn test_scan_health_bounds() {
-        let mut findings = vec![make_finding(
-            "F-1",
-            Severity::Critical,
-            "src/main.rs",
-            0,
-            0,
-            None,
-        )];
-        let chains = vec![];
-        score_all_findings(&mut findings, &chains, &ScoreWeights::default());
-
-        let health = compute_scan_health(&findings, &[], 0);
-        // u32 is always >= 0, so just check upper bound
-        assert!(health.overall <= 1000);
-    }
-
-    #[test]
-    fn test_scanner_risk_per_scanner() {
-        let mut findings = vec![
-            make_finding("F-1", Severity::Critical, "src/main.rs", 0, 0, None),
-            make_finding("F-2", Severity::Info, "src/main.rs", 0, 0, None),
-        ];
-        // Override scanner type to test per-scanner aggregation
-        findings[0].scanner = ScannerType::Gitleaks;
-        findings[1].scanner = ScannerType::Gitleaks;
-
-        let chains = vec![];
-        score_all_findings(&mut findings, &chains, &ScoreWeights::default());
-
-        let health = compute_scan_health(&findings, &["Gitleaks".into()], 0);
-        assert!(health.dimensions.scanner_risk.contains_key("Gitleaks"));
-        let gitleaks_risk = health
-            .dimensions
-            .scanner_risk
-            .get("Gitleaks")
-            .expect("Gitleaks should be in health dimensions");
-        assert!(*gitleaks_risk > 0.0);
     }
 
     // ─── Score Weight Tests ───────────────────────────────────────────────

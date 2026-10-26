@@ -44,3 +44,19 @@ updates:
       prefix: "ci"
       prefix-development: "ci"
       include: "scope"
+
+  # Maintain Docker base image dependencies
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Australia/Brisbane"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore"
+      include: "scope"

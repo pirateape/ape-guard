@@ -3,6 +3,7 @@
 // Uses openssl, certutil, or ct-portal when available
 use super::{Scanner, ScannerError};
 use crate::find::{CanonicalFinding, Confidence, FindingLocation, ScannerType, Severity};
+use crate::scanner::generate_finding_id;
 use async_trait::async_trait;
 use std::path::Path;
 
@@ -62,6 +63,8 @@ impl Scanner for TlsScanner {
         if crate::scanner::binary_exists("openssl") {
             let mut findings = String::new();
             for cert_path in &self.cert_paths {
+                crate::scanner::reject_flag_like_arg(cert_path)
+                    .map_err(|e| ScannerError::InvalidArgument(e.to_string()))?;
                 let output = tokio::process::Command::new("openssl")
                     .args(["x509", "-in", cert_path, "-noout", "-dates", "-subject"])
                     .output()
@@ -111,8 +114,6 @@ impl Scanner for TlsScanner {
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
         let output = String::from_utf8_lossy(raw);
         let mut findings = Vec::new();
-        let now = chrono::Utc::now().format("%Y%m%d").to_string();
-        let nonce = uuid::Uuid::new_v4().simple().to_string();
 
         // Check for openssl output with dates
         if output.contains("notBefore") || output.contains("notAfter") {
@@ -123,7 +124,7 @@ impl Scanner for TlsScanner {
                         || output.contains("EXPIRED"))
                 {
                     findings.push(CanonicalFinding {
-                        id: format!("AG-TLS-{}-{}-{:04}", now, &nonce[..8], i + 1),
+                        id: generate_finding_id("AG-TLS", i),
                         scanner: ScannerType::TlsCertificate,
                         scanner_version: None,
                         rule_id: "TLS001".to_string(),
@@ -174,7 +175,7 @@ impl Scanner for TlsScanner {
                 let detail = if detail.is_empty() { "unknown" } else { detail };
 
                 findings.push(CanonicalFinding {
-                    id: format!("AG-TLS-{}-{}-{:04}", now, &nonce[..8], findings.len() + 1),
+                    id: generate_finding_id("AG-TLS", findings.len()),
                     scanner: ScannerType::TlsCertificate,
                     scanner_version: None,
                     rule_id: if line.contains("EXPIRING") || line.contains("EXPIRED") {
