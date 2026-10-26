@@ -552,6 +552,8 @@ pub fn generate_sarif_report(
     struct SarifDriver {
         name: String,
         version: String,
+        // SARIF 2.1.0 schema requires camelCase property names.
+        #[serde(rename = "informationUri")]
         information_uri: String,
         rules: Vec<SarifRule>,
     }
@@ -560,8 +562,11 @@ pub fn generate_sarif_report(
     struct SarifRule {
         id: String,
         name: Option<String>,
+        #[serde(rename = "shortDescription")]
         short_description: Option<SarifMessage>,
+        #[serde(rename = "fullDescription")]
         full_description: Option<SarifMessage>,
+        #[serde(rename = "defaultConfiguration")]
         default_configuration: SarifDefaultConfig,
         properties: Option<serde_json::Value>,
     }
@@ -578,7 +583,9 @@ pub fn generate_sarif_report(
 
     #[derive(serde::Serialize)]
     struct SarifResult {
+        #[serde(rename = "ruleId")]
         rule_id: String,
+        #[serde(rename = "ruleIndex")]
         rule_index: usize,
         level: String,
         message: SarifMessage,
@@ -588,11 +595,13 @@ pub fn generate_sarif_report(
 
     #[derive(serde::Serialize)]
     struct SarifLocation {
+        #[serde(rename = "physicalLocation")]
         physical_location: SarifPhysicalLocation,
     }
 
     #[derive(serde::Serialize)]
     struct SarifPhysicalLocation {
+        #[serde(rename = "artifactLocation")]
         artifact_location: SarifArtifactLocation,
         region: Option<SarifRegion>,
     }
@@ -604,6 +613,7 @@ pub fn generate_sarif_report(
 
     #[derive(serde::Serialize)]
     struct SarifRegion {
+        #[serde(rename = "startLine")]
         start_line: usize,
     }
 
@@ -695,7 +705,7 @@ pub fn generate_sarif_report(
                 driver: SarifDriver {
                     name: "ApeGuard".to_string(),
                     version: env!("CARGO_PKG_VERSION").to_string(),
-                    information_uri: "https://github.com/pirateape/apeguard".to_string(),
+                    information_uri: "https://github.com/pirateape/ape-guard".to_string(),
                     rules,
                 },
             },
@@ -1363,6 +1373,32 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("sarif-schema-2.1.0"));
+
+        // SARIF 2.1.0 requires camelCase property names; GitHub's SARIF
+        // validator rejects snake_case as "additional property".
+        let driver = &json["runs"][0]["tool"]["driver"];
+        assert!(driver.get("informationUri").is_some(), "driver.informationUri must be camelCase");
+        assert!(driver.get("information_uri").is_none());
+        if let Some(rule) = driver["rules"].as_array().and_then(|r| r.first()) {
+            assert!(rule.get("ruleId").is_none() && rule.get("id").is_some());
+            if rule.get("shortDescription").is_some() {
+                assert!(rule.get("short_description").is_none());
+            }
+        }
+        if let Some(result) = json["runs"][0]["results"].as_array().and_then(|r| r.first()) {
+            assert!(result.get("ruleId").is_some(), "result.ruleId must be camelCase");
+            assert!(result.get("ruleIndex").is_some(), "result.ruleIndex must be camelCase");
+            assert!(result.get("rule_id").is_none());
+            if let Some(loc) = result["locations"].as_array().and_then(|l| l.first()) {
+                assert!(loc.get("physicalLocation").is_some());
+                if let Some(phys) = loc.get("physicalLocation") {
+                    assert!(phys.get("artifactLocation").is_some());
+                    if let Some(region) = phys.get("region") {
+                        assert!(region.get("startLine").is_some());
+                    }
+                }
+            }
+        }
     }
 
     #[test]
