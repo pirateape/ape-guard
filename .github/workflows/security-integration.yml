@@ -33,7 +33,9 @@ permissions:
 env:
   SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  RUST_VERSION: "1.84"
+  # "stable" — a pinned 1.84 cannot parse newer transitive manifests
+  # (e.g. idna_adapter 1.2.2) since Cargo.lock is not committed.
+  RUST_VERSION: "stable"
 
 jobs:
   # ─── Core ApeGuard Scan (Layers 1-7 + 8-12) ───
