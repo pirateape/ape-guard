@@ -2,7 +2,7 @@
 # ApeGuard — Multi-stage Docker build
 # =============================================================================
 # Stage 1: Build the binary
-FROM rust:1.94-slim-bookworm AS builder
+FROM rust:1.99-slim-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev && \
