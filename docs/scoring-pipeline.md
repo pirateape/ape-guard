@@ -1,3 +1,16 @@
+---
+id: apeguard-scoring-pipeline
+type: architecture-design
+title: Multi-Agent Scoring Pipeline design
+status: draft
+parent: apeguard-architecture
+depends-on: []
+references: [apeguard-score]
+implements: []
+covers: []
+tags: [design-doc, scoring-pipeline]
+---
+
 # Option D: Multi-Agent Scoring Pipeline
 
 > Status: **Design Phase** | Priority: Medium | Depends on: Option C (grade engine) OR standalone
