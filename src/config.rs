@@ -548,9 +548,9 @@ mod tests {
         };
         merge(&mut base, overlay);
         assert_eq!(base.cache.path, PathBuf::from("/custom/cache"));
-        assert!(base.cache.enabled);          // kept default
+        assert!(base.cache.enabled); // kept default
         assert_eq!(base.cache.ttl_hours, 24); // kept default
-        assert!(base.cache.store_findings);   // kept default
+        assert!(base.cache.store_findings); // kept default
     }
 
     #[test]
@@ -565,7 +565,7 @@ mod tests {
         };
         merge(&mut base, overlay);
         assert!(!base.filters.exclude_test_files); // overridden
-        assert!(base.filters.exclude_vendor);      // kept default
+        assert!(base.filters.exclude_vendor); // kept default
         assert_eq!(base.filters.min_confidence, 0); // kept default
     }
 
