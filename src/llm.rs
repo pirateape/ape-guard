@@ -470,7 +470,9 @@ mod tests {
             },
             cwe: None,
             cvss: None,
-            remediation: Some("Already has detailed remediation here that is longer than forty chars".to_string()),
+            remediation: Some(
+                "Already has detailed remediation here that is longer than forty chars".to_string(),
+            ),
             fix_effort: None,
             evidence: None,
             tags: vec![],
