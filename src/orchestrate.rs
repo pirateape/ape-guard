@@ -32,8 +32,8 @@ use crate::report;
 use crate::scanner::{
     aws_s3::AwsS3Scanner, checkov::Checkov, container::ContainerScanner, context_drift,
     dast::DastScanner, gitleaks::Gitleaks, mcp_security::McpScanner, semgrep::Semgrep, syft::Syft,
-    terraform::TerraformScanner, tls::TlsScanner, trivy::Trivy, trufflehog::Trufflehog, Scanner,
-    ScannerResult,
+    terraform::TerraformScanner, tls::TlsScanner, trivy::Trivy, trufflehog::Trufflehog,
+    zap::ZapScanner, Scanner, ScannerResult,
 };
 use crate::score;
 use crate::stride;
@@ -331,6 +331,7 @@ pub(crate) async fn run_scan(
             5 => {
                 if let Some(url) = &web_target {
                     scanners.push(Box::new(DastScanner::new(url)));
+                    scanners.push(Box::new(ZapScanner::new(url)));
                 }
             }
             6 => {
