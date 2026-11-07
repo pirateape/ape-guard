@@ -284,13 +284,13 @@ pub(crate) async fn run_scan(
 
     // Initialize cache
     let cache = if no_cache {
-        cache::ScanCache::disabled()
+        cache::ScanCache::disabled()?
     } else if cfg.cache.enabled {
         let c = cache::ScanCache::open(&cfg.cache.path)?;
         let _ = c.enforce_ttl(cfg.cache.ttl_hours);
         c
     } else {
-        cache::ScanCache::disabled()
+        cache::ScanCache::disabled()?
     };
 
     // Collect scanners by layer

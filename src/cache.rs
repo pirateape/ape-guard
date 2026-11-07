@@ -75,12 +75,12 @@ impl ScanCache {
     }
 
     /// Create a disabled cache (no-op)
-    pub fn disabled() -> Self {
-        ScanCache {
-            conn: Connection::open_in_memory().expect("in-memory SQLite open must succeed"),
+    pub fn disabled() -> anyhow::Result<Self> {
+        Ok(ScanCache {
+            conn: Connection::open_in_memory()?,
             enabled: false,
             db_path: PathBuf::from(":memory:"),
-        }
+        })
     }
 
     /// Get findings snapshot for a specific scan

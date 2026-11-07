@@ -649,14 +649,18 @@ fn build_import_graph(
         for import in &imports {
             if let Some(rc_import) = path_to_rc.get(import.as_path()) {
                 // rc_import is &&Rc<PathBuf>; *rc_import gives &Rc<PathBuf>
-                graph
-                    .get_mut(file)
-                    .expect("file must be pre-populated in graph")
-                    .push(Rc::clone(*rc_import));
-                reverse
-                    .get_mut(*rc_import)
-                    .expect("import must be pre-populated in reverse graph")
-                    .push(Rc::clone(file));
+                // Both graphs are pre-populated with all files, so these should
+                // always succeed. Handle gracefully if they don't.
+                let Some(file_entry) = graph.get_mut(file) else {
+                    tracing::warn!("file not pre-populated in graph: {:?}", file);
+                    continue;
+                };
+                let Some(reverse_entry) = reverse.get_mut(*rc_import) else {
+                    tracing::warn!("import not pre-populated in reverse graph: {:?}", import);
+                    continue;
+                };
+                file_entry.push(Rc::clone(*rc_import));
+                reverse_entry.push(Rc::clone(file));
                 total_imports += 1;
             }
         }

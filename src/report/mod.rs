@@ -624,11 +624,8 @@ pub fn generate_sarif_report(
 
     let rules: Vec<SarifRule> = rule_ids
         .iter()
-        .map(|id| {
-            let f = findings
-                .iter()
-                .find(|f| f.rule_id == *id)
-                .expect("deduplicated rule_ids must match a finding in the set");
+        .filter_map(|id| {
+            let f = findings.iter().find(|f| f.rule_id == *id)?;
             let severity_str = format!("{:?}", f.severity);
             let level = match f.severity {
                 crate::find::Severity::Critical | crate::find::Severity::High => "error",

@@ -44,8 +44,13 @@ fn install_signal_handler() {
         #[cfg(unix)]
         {
             use tokio::signal::unix::{signal, SignalKind};
-            let mut term =
-                signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+            let mut term = match signal(SignalKind::terminate()) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("failed to install SIGTERM handler: {e}");
+                    return;
+                }
+            };
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {},
                 _ = term.recv() => {},
