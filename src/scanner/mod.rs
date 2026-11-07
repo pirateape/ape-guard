@@ -99,6 +99,26 @@ pub async fn run_command_with_timeout(
     }
 }
 
+/// Run a command with a timeout, returning stdout even on non-zero exit.
+///
+/// Some scanners (Semgrep, Trivy) emit findings to stdout and exit with code 1
+/// when issues are found. We still want to capture that output rather than
+/// treating it as a failed execution.
+pub async fn run_command_with_timeout_lenient(
+    binary: &str,
+    args: &[&str],
+    timeout_secs: u64,
+) -> Result<Vec<u8>, ScannerError> {
+    let cmd = tokio::process::Command::new(binary).args(args).output();
+
+    let timeout_dur = Duration::from_secs(timeout_secs);
+    match tokio::time::timeout(timeout_dur, cmd).await {
+        Ok(Ok(output)) => Ok(output.stdout),
+        Ok(Err(e)) => Err(ScannerError::Io(e)),
+        Err(_) => Err(ScannerError::Timeout(timeout_secs)),
+    }
+}
+
 #[async_trait]
 pub trait Scanner: Send + Sync {
     /// Name of the scanner (e.g., "gitleaks", "semgrep")

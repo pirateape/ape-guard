@@ -92,10 +92,12 @@ impl Scanner for Gitleaks {
         let result = crate::scanner::run_command_with_timeout(&self.binary, &arg_refs, 30).await;
 
         // Read the temp file regardless of command success/failure
-        let report_content = std::fs::read(&report_file).map_err(ScannerError::Io)?;
+        let report_content = std::fs::read(&report_file);
 
-        // Clean up temp file
+        // Clean up temp file in all cases (even on read error)
         let _ = std::fs::remove_file(&report_file);
+
+        let report_content = report_content.map_err(ScannerError::Io)?;
 
         // If the report file has findings (non-empty), return them
         if report_content.len() > 5 {
