@@ -49,7 +49,8 @@ pub(crate) use verify::{
     verify_dependency_claim, verify_path_claim, verify_single_claim, DependencyCache,
 };
 
-use crate::find::Severity;
+use crate::find::{CanonicalFinding, Severity};
+use crate::scanner::{Scanner, ScannerError, ScannerResult, ScannerType};
 use std::path::{Path, PathBuf};
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -144,6 +145,65 @@ impl Default for ContextDriftScanner {
     }
 }
 
+#[async_trait::async_trait]
+impl Scanner for ContextDriftScanner {
+    fn name(&self) -> &'static str {
+        "context-drift"
+    }
+
+    fn scanner_type(&self) -> ScannerType {
+        ScannerType::ContextDrift
+    }
+
+    async fn check_installed(&self) -> Result<bool, ScannerError> {
+        // Context drift scanner is always installed (built-in)
+        Ok(true)
+    }
+
+    async fn version(&self) -> Result<String, ScannerError> {
+        Ok("0.1.0".to_string())
+    }
+
+    /// Delegate to `scan_drift()` and convert drift findings to canonical findings.
+    /// This overrides the default `scan()` (which calls `scan_raw()` + `parse_output()`)
+    /// because context drift is file-system based, not binary-output based.
+    async fn scan(&self, _path: &Path) -> Result<ScannerResult, ScannerError> {
+        let drift_result = self.scan_drift();
+        match drift_result {
+            DriftScanResult::Complete { drift_findings, .. } => {
+                let canonical = drift_findings_to_canonical(&drift_findings);
+                Ok(ScannerResult::Complete {
+                    name: self.name().to_string(),
+                    version: Some("0.1.0".to_string()),
+                    finding_count: canonical.len(),
+                    findings: canonical,
+                })
+            }
+            DriftScanResult::NoContextFiles | DriftScanResult::NoClaims => {
+                Ok(ScannerResult::Complete {
+                    name: self.name().to_string(),
+                    version: Some("0.1.0".to_string()),
+                    finding_count: 0,
+                    findings: vec![],
+                })
+            }
+        }
+    }
+
+    // scan_raw / parse_output are unused because scan() is overridden above.
+    async fn scan_raw(&self, _path: &Path) -> Result<Vec<u8>, ScannerError> {
+        Ok(Vec::new())
+    }
+
+    fn parse_output(&self, _raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
+        Ok(Vec::new())
+    }
+
+    fn install_hint(&self) -> &'static str {
+        "Context drift scanner is built-in to ApeGuard"
+    }
+}
+
 /// Results of a context drift scan
 #[derive(Debug)]
 pub enum DriftScanResult {
@@ -152,6 +212,7 @@ pub enum DriftScanResult {
     /// Context files found but no claims extracted
     NoClaims,
     /// Full scan complete with drift findings
+    #[allow(dead_code)] // Fields read by tests and by orchestrate logging
     Complete {
         context_file_count: usize,
         total_claims: usize,
