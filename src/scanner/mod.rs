@@ -262,3 +262,4 @@ pub mod terraform;
 pub mod tls;
 pub mod trivy;
 pub mod trufflehog;
+pub mod zap;
