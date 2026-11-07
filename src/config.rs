@@ -263,8 +263,48 @@ pub fn load(args: &cli::Args) -> anyhow::Result<Config> {
     Ok(cfg)
 }
 
+/// Reference defaults for deep-merge comparisons.
+fn default_refs() -> (
+    CacheConfig,
+    ReportConfig,
+    LlmConfig,
+    ContextDriftConfig,
+    FilterConfig,
+    ReachabilityConfig,
+    StrideConfig,
+    crate::policy::PolicyConfig,
+) {
+    let cfg = Config::default();
+    (
+        cfg.cache,
+        cfg.report,
+        cfg.llm,
+        cfg.context_drift,
+        cfg.filters,
+        cfg.reachability,
+        cfg.stride,
+        cfg.policy,
+    )
+}
+
 /// Merge a partial config into the current one (non-destructive overlay).
+///
+/// Uses deep merge for sub-structs (cache, report, llm, etc.): each field is
+/// only overridden when the overlay provides a non-default value, so a partial
+/// `.apeguard.yaml` that sets only `cache.path` won't clobber `cache.enabled`,
+/// `cache.ttl_hours`, or `cache.store_findings`.
 fn merge(base: &mut Config, overlay: Config) {
+    let (
+        def_cache,
+        def_report,
+        def_llm,
+        def_context_drift,
+        def_filters,
+        def_reachability,
+        def_stride,
+        def_policy,
+    ) = default_refs();
+
     // Only override layers when the overlay provides explicitly (non-empty vector)
     if !overlay.layers.is_empty() {
         base.layers = overlay.layers;
@@ -292,23 +332,102 @@ fn merge(base: &mut Config, overlay: Config) {
     if overlay.binaries.syft.is_some() {
         base.binaries.syft = overlay.binaries.syft;
     }
-    // Cache settings
-    base.cache = overlay.cache;
-    // Report settings (formats/types always taken from overlay)
-    base.report = overlay.report;
-    // LLM settings
-    base.llm = overlay.llm;
-    // Context drift settings
-    base.context_drift = overlay.context_drift;
-    // Filters
-    base.filters = overlay.filters;
-    // Reachability
-    base.reachability = overlay.reachability;
-    // STRIDE
-    base.stride = overlay.stride;
-    // Policy
-    base.policy = overlay.policy;
-    // Output directory
+    // Deep-merge cache settings — only override fields that differ from default
+    if overlay.cache.enabled != def_cache.enabled {
+        base.cache.enabled = overlay.cache.enabled;
+    }
+    if overlay.cache.path != def_cache.path {
+        base.cache.path = overlay.cache.path;
+    }
+    if overlay.cache.ttl_hours != def_cache.ttl_hours {
+        base.cache.ttl_hours = overlay.cache.ttl_hours;
+    }
+    if overlay.cache.store_findings != def_cache.store_findings {
+        base.cache.store_findings = overlay.cache.store_findings;
+    }
+    // Deep-merge report settings
+    if overlay.report.formats != def_report.formats {
+        base.report.formats = overlay.report.formats;
+    }
+    if overlay.report.types != def_report.types {
+        base.report.types = overlay.report.types;
+    }
+    // Deep-merge LLM settings
+    if overlay.llm.endpoint != def_llm.endpoint {
+        base.llm.endpoint = overlay.llm.endpoint;
+    }
+    if overlay.llm.model != def_llm.model {
+        base.llm.model = overlay.llm.model;
+    }
+    if overlay.llm.enabled != def_llm.enabled {
+        base.llm.enabled = overlay.llm.enabled;
+    }
+    // Deep-merge context drift settings
+    if overlay.context_drift.enabled != def_context_drift.enabled {
+        base.context_drift.enabled = overlay.context_drift.enabled;
+    }
+    if overlay.context_drift.include_unknown != def_context_drift.include_unknown {
+        base.context_drift.include_unknown = overlay.context_drift.include_unknown;
+    }
+    if overlay.context_drift.max_findings != def_context_drift.max_findings {
+        base.context_drift.max_findings = overlay.context_drift.max_findings;
+    }
+    // Deep-merge filters
+    if overlay.filters.exclude_test_files != def_filters.exclude_test_files {
+        base.filters.exclude_test_files = overlay.filters.exclude_test_files;
+    }
+    if overlay.filters.exclude_vendor != def_filters.exclude_vendor {
+        base.filters.exclude_vendor = overlay.filters.exclude_vendor;
+    }
+    if overlay.filters.exclude_examples != def_filters.exclude_examples {
+        base.filters.exclude_examples = overlay.filters.exclude_examples;
+    }
+    if overlay.filters.exclude_paths != def_filters.exclude_paths {
+        base.filters.exclude_paths = overlay.filters.exclude_paths;
+    }
+    if overlay.filters.exclude_paths_enabled != def_filters.exclude_paths_enabled {
+        base.filters.exclude_paths_enabled = overlay.filters.exclude_paths_enabled;
+    }
+    if overlay.filters.suppress_test_low_severity != def_filters.suppress_test_low_severity {
+        base.filters.suppress_test_low_severity = overlay.filters.suppress_test_low_severity;
+    }
+    if overlay.filters.require_cross_scanner_for_low != def_filters.require_cross_scanner_for_low {
+        base.filters.require_cross_scanner_for_low = overlay.filters.require_cross_scanner_for_low;
+    }
+    if overlay.filters.min_confidence != def_filters.min_confidence {
+        base.filters.min_confidence = overlay.filters.min_confidence;
+    }
+    if overlay.filters.min_severity != def_filters.min_severity {
+        base.filters.min_severity = overlay.filters.min_severity;
+    }
+    // Deep-merge reachability
+    if overlay.reachability.enabled != def_reachability.enabled {
+        base.reachability.enabled = overlay.reachability.enabled;
+    }
+    if overlay.reachability.entry_points != def_reachability.entry_points {
+        base.reachability.entry_points = overlay.reachability.entry_points;
+    }
+    if overlay.reachability.include_extensions != def_reachability.include_extensions {
+        base.reachability.include_extensions = overlay.reachability.include_extensions;
+    }
+    if overlay.reachability.exclude_dirs != def_reachability.exclude_dirs {
+        base.reachability.exclude_dirs = overlay.reachability.exclude_dirs;
+    }
+    // Deep-merge STRIDE
+    if overlay.stride.enabled != def_stride.enabled {
+        base.stride.enabled = overlay.stride.enabled;
+    }
+    if overlay.stride.coverage_threshold != def_stride.coverage_threshold {
+        base.stride.coverage_threshold = overlay.stride.coverage_threshold;
+    }
+    // Deep-merge policy
+    if overlay.policy.enabled != def_policy.enabled {
+        base.policy.enabled = overlay.policy.enabled;
+    }
+    if overlay.policy.policy_dir != def_policy.policy_dir {
+        base.policy.policy_dir = overlay.policy.policy_dir;
+    }
+    // Output directory — CLI/env override handled separately in load()
     base.output_dir = overlay.output_dir;
 }
 
@@ -413,6 +532,41 @@ mod tests {
         };
         merge(&mut base, overlay);
         assert_eq!(base.report.formats, vec!["html"]);
+    }
+
+    #[test]
+    fn test_merge_partial_cache_does_not_clobber_defaults() {
+        // A partial overlay that only sets cache.path should NOT clobber
+        // cache.enabled, cache.ttl_hours, or cache.store_findings.
+        let mut base = Config::default();
+        let overlay = Config {
+            cache: CacheConfig {
+                path: PathBuf::from("/custom/cache"),
+                ..Config::default().cache
+            },
+            ..Config::default()
+        };
+        merge(&mut base, overlay);
+        assert_eq!(base.cache.path, PathBuf::from("/custom/cache"));
+        assert!(base.cache.enabled);          // kept default
+        assert_eq!(base.cache.ttl_hours, 24); // kept default
+        assert!(base.cache.store_findings);   // kept default
+    }
+
+    #[test]
+    fn test_merge_partial_filters_only_overrides_changed() {
+        let mut base = Config::default();
+        let overlay = Config {
+            filters: FilterConfig {
+                exclude_test_files: false,
+                ..FilterConfig::default()
+            },
+            ..Config::default()
+        };
+        merge(&mut base, overlay);
+        assert!(!base.filters.exclude_test_files); // overridden
+        assert!(base.filters.exclude_vendor);      // kept default
+        assert_eq!(base.filters.min_confidence, 0); // kept default
     }
 
     #[test]

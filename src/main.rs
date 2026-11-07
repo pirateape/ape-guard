@@ -606,13 +606,88 @@ async fn run_compare(
             quiet_println!(quiet, "{}", serde_json::to_string_pretty(&result)?);
         }
         cli::CompareFormat::Html => {
-            anyhow::bail!(
-                "HTML comparison output is not yet implemented. Use --format text or json."
+            let mut html = String::from(
+                "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>ApeGuard Scan Comparison</title>\n<style>\nbody { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 2rem; }\nh1 { font-size: 1.5rem; margin-bottom: 1rem; }\ntable { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }\nth, td { border: 1px solid #ddd; padding: 0.6rem; text-align: left; }\nth { background: #f4f4f4; }\n.added { color: #d73a49; }\n.removed { color: #28a745; }\n.changed { color: #b08800; }\n.summary { display: flex; gap: 1rem; margin-bottom: 1.5rem; }\n.summary-box { padding: 1rem; border-radius: 6px; background: #f6f8fa; flex: 1; }\n.summary-box h2 { margin: 0 0 0.5rem; font-size: 1rem; }\n.summary-box .num { font-size: 1.5rem; font-weight: bold; }\n</style>\n</head>\n<body>\n<h1>ApeGuard Scan Comparison</h1>\n<div class=\"summary\">\n<div class=\"summary-box\"><h2>Scan A</h2><div class=\"num\">"
             );
+            html.push_str(&findings_a.len().to_string());
+            html.push_str(" findings</div></div>");
+            html.push_str("<div class=\"summary-box\"><h2>Scan B</h2><div class=\"num\">");
+            html.push_str(&findings_b.len().to_string());
+            html.push_str(" findings</div></div>");
+            html.push_str("<div class=\"summary-box\"><h2>Added</h2><div class=\"num added\">");
+            html.push_str(&added.len().to_string());
+            html.push_str("</div></div>");
+            html.push_str("<div class=\"summary-box\"><h2>Removed</h2><div class=\"num removed\">");
+            html.push_str(&removed.len().to_string());
+            html.push_str("</div></div>");
+            html.push_str("<div class=\"summary-box\"><h2>Severity Changed</h2><div class=\"num changed\">");
+            html.push_str(&severity_changed.len().to_string());
+            html.push_str("</div></div>");
+            html.push_str("</div>");
+
+            if !added.is_empty() {
+                html.push_str("<h2>Added Findings</h2><table><tr><th>Severity</th><th>Title</th><th>File</th><th>Line</th><th>Scanner</th><th>Rule</th></tr>");
+                for f in &added {
+                    html.push_str("<tr>");
+                    html.push_str(&format!("<td class=\"added\"><b>{:?}</b></td>", f.severity));
+                    html.push_str(&format!("<td>{}</td>", html_escape(&f.title)));
+                    html.push_str(&format!("<td>{}</td>", html_escape(&f.location.file.display().to_string())));
+                    html.push_str(&format!("<td>{}</td>", f.location.line.map_or_else(|| "-".to_string(), |l| l.to_string())));
+                    html.push_str(&format!("<td>{}</td>", f.scanner));
+                    html.push_str(&format!("<td>{}</td>", html_escape(&f.rule_id)));
+                    html.push_str("</tr>");
+                }
+                html.push_str("</table>");
+            }
+
+            if !removed.is_empty() {
+                html.push_str("<h2>Removed Findings</h2><table><tr><th>Severity</th><th>Title</th><th>File</th><th>Line</th><th>Scanner</th><th>Rule</th></tr>");
+                for f in &removed {
+                    html.push_str("<tr>");
+                    html.push_str(&format!("<td class=\"removed\"><b>{:?}</b></td>", f.severity));
+                    html.push_str(&format!("<td>{}</td>", html_escape(&f.title)));
+                    html.push_str(&format!("<td>{}</td>", html_escape(&f.location.file.display().to_string())));
+                    html.push_str(&format!("<td>{}</td>", f.location.line.map_or_else(|| "-".to_string(), |l| l.to_string())));
+                    html.push_str(&format!("<td>{}</td>", f.scanner));
+                    html.push_str(&format!("<td>{}</td>", html_escape(&f.rule_id)));
+                    html.push_str("</tr>");
+                }
+                html.push_str("</table>");
+            }
+
+            if !severity_changed.is_empty() {
+                html.push_str("<h2>Severity Changes</h2><table><tr><th>Title</th><th>Old Severity</th><th>New Severity</th><th>File</th><th>Line</th></tr>");
+                for (old, new) in &severity_changed {
+                    html.push_str("<tr>");
+                    html.push_str(&format!("<td>{}</td>", html_escape(&new.title)));
+                    html.push_str(&format!("<td>{:?}</td>", old.severity));
+                    html.push_str(&format!("<td class=\"changed\"><b>{:?}</b></td>", new.severity));
+                    html.push_str(&format!("<td>{}</td>", html_escape(&new.location.file.display().to_string())));
+                    html.push_str(&format!("<td>{}</td>", new.location.line.map_or_else(|| "-".to_string(), |l| l.to_string())));
+                    html.push_str("</tr>");
+                }
+                html.push_str("</table>");
+            }
+
+            if added.is_empty() && removed.is_empty() && severity_changed.is_empty() {
+                html.push_str("<p>No differences found between the two scans.</p>");
+            }
+
+            html.push_str("</body>\n</html>");
+            quiet_println!(quiet, "{}", html);
         }
     }
 
     Ok(())
+}
+
+/// Escape HTML special characters in a string.
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 /// Handle config subcommand

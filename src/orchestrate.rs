@@ -473,61 +473,6 @@ pub(crate) async fn run_scan(
         }
     }
 
-    // Context Drift Detection (Layer 8)
-    if args.context_drift {
-        let drift_scanner = context_drift::ContextDriftScanner::new(&target_path);
-        let drift_result = drift_scanner.scan_drift();
-
-        match drift_result {
-            context_drift::DriftScanResult::Complete {
-                context_file_count,
-                total_claims,
-                drift_findings,
-                drift_counts,
-            } => {
-                let canonical = context_drift::drift_findings_to_canonical(&drift_findings);
-                let drift_count = canonical.len();
-
-                if drift_count > 0 {
-                    tracing::info!(
-                        "Context drift: {} files, {} claims, {} drifts (C:{}, H:{}, M:{}, L:{}, I:{})",
-                        context_file_count,
-                        total_claims,
-                        drift_count,
-                        drift_counts.critical,
-                        drift_counts.high,
-                        drift_counts.medium,
-                        drift_counts.low,
-                        drift_counts.info,
-                    );
-                } else if total_claims > 0 {
-                    tracing::info!(
-                        "Context drift: {} files, {} claims verified — no drift detected",
-                        context_file_count,
-                        total_claims,
-                    );
-                } else {
-                    tracing::info!(
-                        "Context drift: {} context files found but no extractable claims",
-                        context_file_count,
-                    );
-                }
-
-                all_findings.extend(canonical);
-            }
-            context_drift::DriftScanResult::NoContextFiles => {
-                tracing::info!(
-                    "Context drift: no AGENTS.md, CLAUDE.md, or .cursor/rules files found"
-                );
-            }
-            context_drift::DriftScanResult::NoClaims => {
-                tracing::info!(
-                    "Context drift: context files found but no claims could be extracted"
-                );
-            }
-        }
-    }
-
     // Normalize and deduplicate
     normalize::normalize_findings(&mut all_findings);
     dedup::cross_reference(&mut all_findings);
