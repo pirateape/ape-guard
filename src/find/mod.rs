@@ -127,7 +127,6 @@ pub enum ScannerType {
     Checkov,
     Syft,
     Nuclei,
-    Zap,
     Architecture,
     ContextDrift,
     McpSecurity,    // Layer 9: MCP security scanning
@@ -150,7 +149,6 @@ impl std::fmt::Display for ScannerType {
             ScannerType::Checkov => write!(f, "Checkov"),
             ScannerType::Syft => write!(f, "Syft"),
             ScannerType::Nuclei => write!(f, "Nuclei"),
-            ScannerType::Zap => write!(f, "ZAP"),
             ScannerType::Architecture => write!(f, "Architecture"),
             ScannerType::ContextDrift => write!(f, "ContextDrift"),
             ScannerType::McpSecurity => write!(f, "McpSecurity"),
