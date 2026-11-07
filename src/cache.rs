@@ -509,4 +509,180 @@ mod tests {
             .ok();
         assert!(old_exists.is_none());
     }
+
+    #[test]
+    fn test_disabled_cache_returns_none() {
+        let cache = ScanCache::disabled().expect("disabled cache should open");
+
+        // All query methods should return None when disabled
+        assert!(cache.get_scan_findings("any-scan").unwrap().is_none());
+        assert!(cache
+            .get_latest_scan_findings()
+            .unwrap()
+            .is_none());
+        assert!(cache
+            .get_latest_scan_record()
+            .unwrap()
+            .is_none());
+
+        // record_scan on disabled cache should be a no-op
+        let findings = vec![sample_finding()];
+        cache
+            .record_scan(RecordScanInput {
+                scan_id: "scan-1",
+                target: ".",
+                started_at: "2026-01-01T00:00:00Z",
+                completed_at: "2026-01-01T00:05:00Z",
+                total_findings: findings.len() as u32,
+                scanners_used: &["gitleaks".to_string()],
+                findings: &findings,
+                store_findings: true,
+            })
+            .expect("disabled record_scan should succeed");
+
+        assert!(cache.get_scan_findings("scan-1").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_stats_returns_counts() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
+
+        let findings = vec![sample_finding()];
+        cache
+            .record_scan(RecordScanInput {
+                scan_id: "scan-1",
+                target: ".",
+                started_at: "2026-01-01T00:00:00Z",
+                completed_at: "2026-01-01T00:05:00Z",
+                total_findings: findings.len() as u32,
+                scanners_used: &["gitleaks".to_string()],
+                findings: &findings,
+                store_findings: true,
+            })
+            .expect("record_scan should succeed");
+
+        let stats = cache.stats().expect("stats should succeed");
+        assert_eq!(stats.scan_count, 1);
+        assert_eq!(stats.total_findings, 1);
+        assert!(stats.enabled);
+        assert!(stats.database_size_bytes > 0);
+    }
+
+    #[test]
+    fn test_get_latest_scan_record_metadata_only() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
+
+        let findings = vec![sample_finding()];
+        cache
+            .record_scan(RecordScanInput {
+                scan_id: "scan-1",
+                target: "/my/target",
+                started_at: "2026-01-01T00:00:00Z",
+                completed_at: "2026-01-01T00:05:00Z",
+                total_findings: findings.len() as u32,
+                scanners_used: &["gitleaks".to_string(), "semgrep".to_string()],
+                findings: &findings,
+                store_findings: true,
+            })
+            .expect("record_scan should succeed");
+
+        let record = cache
+            .get_latest_scan_record()
+            .expect("get_latest_scan_record should succeed")
+            .expect("should have a record");
+        assert_eq!(record.scan_id, "scan-1");
+        assert_eq!(record.target, "/my/target");
+        assert_eq!(record.started_at, "2026-01-01T00:00:00Z");
+        assert_eq!(record.completed_at.as_deref(), Some("2026-01-01T00:05:00Z"));
+        assert_eq!(record.total_findings, 1);
+        assert_eq!(record.scanners_used, "gitleaks,semgrep");
+    }
+
+    #[test]
+    fn test_prune_keeps_n_most_recent() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
+
+        let findings = vec![sample_finding()];
+
+        // Record 3 scans with distinct timestamps
+        for (i, scan_id) in ["scan-1", "scan-2", "scan-3"].iter().enumerate() {
+            cache
+                .record_scan(RecordScanInput {
+                    scan_id,
+                    target: ".",
+                    started_at: &format!("2026-01-0{}T00:00:00Z", i + 1),
+                    completed_at: &format!("2026-01-0{}T00:05:00Z", i + 1),
+                    total_findings: findings.len() as u32,
+                    scanners_used: &["gitleaks".to_string()],
+                    findings: &findings,
+                    store_findings: true,
+                })
+                .expect("record_scan should succeed");
+        }
+
+        // prune(1) keeps the 1 most recent + boundary, removes 1 older record
+        let removed = cache.prune(1).expect("prune should succeed");
+        assert_eq!(removed, 1);
+
+        // scan-1 (oldest) should be gone, scan-2 and scan-3 should remain
+        assert!(cache.get_scan_findings("scan-1").unwrap().is_none());
+        assert!(cache.get_scan_findings("scan-2").unwrap().is_some());
+        assert!(cache.get_scan_findings("scan-3").unwrap().is_some());
+    }
+
+    #[test]
+    fn test_recent_scans_returns_n_most_recent() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
+
+        let findings = vec![sample_finding()];
+
+        // Record 3 scans
+        for (i, scan_id) in ["scan-1", "scan-2", "scan-3"].iter().enumerate() {
+            cache
+                .record_scan(RecordScanInput {
+                    scan_id,
+                    target: ".",
+                    started_at: &format!("2026-01-0{}T00:00:00Z", i + 1),
+                    completed_at: &format!("2026-01-0{}T00:05:00Z", i + 1),
+                    total_findings: findings.len() as u32,
+                    scanners_used: &["gitleaks".to_string()],
+                    findings: &findings,
+                    store_findings: true,
+                })
+                .expect("record_scan should succeed");
+        }
+
+        // Request 2 most recent
+        let recent = cache.recent_scans(2).expect("recent_scans should succeed");
+        assert_eq!(recent.len(), 2);
+        // Most recent first
+        assert_eq!(recent[0].scan_id, "scan-3");
+        assert_eq!(recent[1].scan_id, "scan-2");
+    }
+
+    #[test]
+    fn test_get_scan_findings_returns_none_for_missing_scan() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
+
+        assert!(cache
+            .get_scan_findings("nonexistent")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn test_get_latest_scan_findings_returns_none_when_empty() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
+        let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
+
+        assert!(cache
+            .get_latest_scan_findings()
+            .unwrap()
+            .is_none());
+    }
 }
