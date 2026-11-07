@@ -142,33 +142,7 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Update Homebrew formula
-        # The release is already published at this point; a missing/invalid
-        # tap token must not mark the whole release run as failed.
-        continue-on-error: true
-        env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
-            echo "⚠️ HOMEBREW_TAP_TOKEN not set — skipping Homebrew tap update (update manually or via update-homebrew-tap.yml)"
-            exit 0
-          fi
-          # Checkout homebrew-tap repo
-          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/pirateape/homebrew-tap.git homebrew-tap
-          cd homebrew-tap
-
-          # Download source tarball and compute SHA256
-          curl -sL "https://github.com/pirateape/ape-guard/archive/refs/tags/${{ github.ref_name }}.tar.gz" -o source.tar.gz
-          SHA=$(shasum -a 256 source.tar.gz | cut -d' ' -f1)
-
-          # Update version, URL and SHA256 in formula
-          sed -i "s/version \".*\"/version \"${{ github.ref_name }}\"/" Formula/apeguard.rb
-          sed -i "s|url \".*\"|url \"https://github.com/pirateape/ape-guard/archive/refs/tags/${{ github.ref_name }}.tar.gz\"|" Formula/apeguard.rb
-          sed -i "s/sha256 \".*\"/sha256 \"$SHA\"/" Formula/apeguard.rb
-
-          # Commit and push
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/apeguard.rb
-          git commit -m "Update apeguard to ${{ github.ref_name }}"
-          git push origin main
+      # NOTE: Homebrew tap update is handled by the separate
+      # update-homebrew-tap.yml workflow triggered on release:published.
+      # That workflow runs independently and won't block the release if
+      # the tap update fails or HOMEBREW_TAP_TOKEN is not set.
