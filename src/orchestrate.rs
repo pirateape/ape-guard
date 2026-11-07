@@ -57,7 +57,6 @@ pub(crate) struct ScanOutput {
 }
 
 /// Arguments for a scan operation, grouped to avoid too-many-arguments lint
-#[expect(dead_code)]
 pub(crate) struct ScanArgs<'a> {
     pub target: &'a str,
     pub layers: &'a [u8],
@@ -66,9 +65,11 @@ pub(crate) struct ScanArgs<'a> {
     pub output_dir: &'a str,
     pub no_cache: bool,
     pub quiet: bool,
+    #[expect(dead_code)] // Handled in main.rs before constructing ScanArgs
     pub ci: bool,
     pub resume: bool,
     pub grade: bool,
+    #[expect(dead_code)] // Context drift now runs via the Scanner trait impl
     pub context_drift: bool,
     pub stride: bool,
     pub policy: bool,
