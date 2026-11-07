@@ -579,16 +579,148 @@ fn resolve_js_path(path_str: &str, parent: &Path, _target_root: &Path, imports: 
 }
 
 /// Go imports: `import "path"`, `import ("path1"\n"path2")`
+///
+/// Resolves local imports (those under the module's own go.mod path) to
+/// `.go` files. External imports (github.com/..., golang.org/..., stdlib)
+/// are skipped.
 fn extract_go_imports(
-    _content: &str,
-    _parent: &Path,
-    _target_root: &Path,
-    _imports: &mut Vec<PathBuf>,
+    content: &str,
+    parent: &Path,
+    target_root: &Path,
+    imports: &mut Vec<PathBuf>,
 ) {
-    // Go uses full module paths (e.g., "github.com/user/repo/pkg"),
-    // not relative file paths. Local imports use the module name.
-    // For V1, we skip Go import resolution (too complex without AST).
-    // Entry points are still discovered via main.go — just no import following.
+    // Read go.mod to get the module path
+    let module_path = match read_go_mod_module_path(target_root) {
+        Some(mp) => mp,
+        None => return, // No go.mod = can't resolve local imports
+    };
+
+    // Parse import statements (both single and parenthesized blocks)
+    let import_strings = parse_go_imports(content);
+
+    for import_path in import_strings {
+        // Skip stdlib and external imports
+        if import_path.starts_with(".")
+            || import_path.contains("://")
+            || import_path.starts_with('/')
+        {
+            continue;
+        }
+
+        // Check if this is a local import under our module path
+        let relative = if let Some(rest) = import_path.strip_prefix(&module_path) {
+            rest.trim_start_matches('/')
+        } else if import_path == module_path {
+            "" // Import of the module root itself
+        } else {
+            continue; // External dependency
+        };
+
+        // Resolve to a .go file
+        let go_path = parent.join(relative);
+        if go_path.extension().is_none() {
+            // Try directory with .go files (package directory)
+            if go_path.is_dir() {
+                // Look for any .go file in the directory (package entry)
+                if let Ok(entries) = std::fs::read_dir(&go_path) {
+                    for entry in entries.flatten() {
+                        if entry.path().extension().and_then(|e| e.to_str()) == Some("go") {
+                            imports.push(canonicalize_path(&entry.path()));
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+            // Try as {relative}.go or {relative}/index.go or {relative}/mod.go
+            let with_go = go_path.with_extension("go");
+            if with_go.exists() {
+                imports.push(canonicalize_path(&with_go));
+            } else {
+                let index_go = go_path.join("index.go");
+                if index_go.exists() {
+                    imports.push(canonicalize_path(&index_go));
+                } else {
+                    let mod_go = go_path.join("mod.go");
+                    if mod_go.exists() {
+                        imports.push(canonicalize_path(&mod_go));
+                    }
+                }
+            }
+        } else {
+            // Already has .go extension
+            if go_path.exists() {
+                imports.push(canonicalize_path(&go_path));
+            }
+        }
+    }
+}
+
+/// Read the module path from go.mod
+fn read_go_mod_module_path(target_root: &Path) -> Option<String> {
+    let go_mod_path = target_root.join("go.mod");
+    let content = std::fs::read_to_string(&go_mod_path).ok()?;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("module ") {
+            let module_path = rest.trim().trim_matches('"').trim_matches('\'');
+            if !module_path.is_empty() {
+                return Some(module_path.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Parse Go import statements from source content.
+/// Handles both single imports (`import "path"`) and parenthesized blocks.
+fn parse_go_imports(content: &str) -> Vec<String> {
+    let mut imports = Vec::new();
+    let mut in_block = false;
+    let mut block_depth = 0usize;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Skip comments
+        if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+            continue;
+        }
+
+        if !in_block {
+            // Look for import statements
+            if let Some(rest) = trimmed.strip_prefix("import ") {
+                let rest = rest.trim();
+                if rest.starts_with('"') {
+                    // Single import: import "path"
+                    if let Some(path) = extract_quoted_string(rest) {
+                        imports.push(path);
+                    }
+                } else if rest == "(" {
+                    // Parenthesized import block: import (\n ... \n)
+                    in_block = true;
+                    block_depth = 1;
+                }
+            }
+        } else {
+            // Inside an import block
+            if trimmed == "(" {
+                block_depth += 1;
+            } else if trimmed == ")" {
+                block_depth -= 1;
+                if block_depth == 0 {
+                    in_block = false;
+                }
+            } else if !trimmed.is_empty() && !trimmed.starts_with("//") {
+                // Import line inside block
+                if let Some(path) = extract_quoted_string(trimmed) {
+                    imports.push(path);
+                }
+            }
+        }
+    }
+
+    imports
 }
 
 /// C/C++ includes: `#include "header.h"` (relative includes only)
@@ -1359,6 +1491,160 @@ mod tests {
                 .iter()
                 .any(|p| p.to_string_lossy().ends_with("Button.tsx")),
             "Should resolve TSX imports"
+        );
+    }
+
+    #[test]
+    fn test_read_go_mod_module_path() {
+        let tmp = create_temp_dir();
+        write_file(
+            tmp.path(),
+            "go.mod",
+            "module github.com/example/myapp\n\ngo 1.21\n",
+        );
+        let module_path = read_go_mod_module_path(tmp.path());
+        assert_eq!(module_path, Some("github.com/example/myapp".to_string()));
+    }
+
+    #[test]
+    fn test_read_go_mod_module_path_no_file() {
+        let tmp = create_temp_dir();
+        let module_path = read_go_mod_module_path(tmp.path());
+        assert_eq!(module_path, None);
+    }
+
+    #[test]
+    fn test_parse_go_imports_single() {
+        let content = r#"
+package main
+
+import "fmt"
+import "github.com/example/myapp/pkg/utils"
+
+func main() {}
+"#;
+        let imports = parse_go_imports(content);
+        assert_eq!(imports.len(), 2);
+        assert!(imports.contains(&"fmt".to_string()));
+        assert!(imports.contains(&"github.com/example/myapp/pkg/utils".to_string()));
+    }
+
+    #[test]
+    fn test_parse_go_imports_block() {
+        let content = r#"
+package main
+
+import (
+    "fmt"
+    "os"
+    "github.com/example/myapp/internal/config"
+)
+
+func main() {}
+"#;
+        let imports = parse_go_imports(content);
+        assert_eq!(imports.len(), 3);
+        assert!(imports.contains(&"fmt".to_string()));
+        assert!(imports.contains(&"os".to_string()));
+        assert!(imports.contains(&"github.com/example/myapp/internal/config".to_string()));
+    }
+
+    #[test]
+    fn test_parse_go_imports_mixed() {
+        let content = r#"
+package main
+
+import "fmt"
+
+import (
+    "os"
+)
+
+import "github.com/example/myapp/pkg/utils"
+"#;
+        let imports = parse_go_imports(content);
+        assert_eq!(imports.len(), 3);
+    }
+
+    #[test]
+    fn test_extract_go_imports_local() {
+        let tmp = create_temp_dir();
+
+        // Create go.mod
+        write_file(
+            tmp.path(),
+            "go.mod",
+            "module github.com/example/myapp\n\ngo 1.21\n",
+        );
+
+        // Create a local package
+        write_file(
+            tmp.path(),
+            "pkg/utils/helpers.go",
+            "package helpers\n\nfunc Helper() {}",
+        );
+
+        // Create main.go that imports the local package
+        let main_go = write_file(
+            tmp.path(),
+            "main.go",
+            r#"
+package main
+
+import (
+    "fmt"
+    "github.com/example/myapp/pkg/utils/helpers"
+)
+
+func main() {
+    fmt.Println("hello")
+    helpers.Helper()
+}
+"#,
+        );
+
+        let imports = extract_imports(&main_go, tmp.path());
+        assert!(
+            imports
+                .iter()
+                .any(|p| p.to_string_lossy().ends_with("helpers.go")),
+            "Should resolve local Go import, got: {:?}",
+            imports
+        );
+    }
+
+    #[test]
+    fn test_extract_go_imports_external_skipped() {
+        let tmp = create_temp_dir();
+
+        write_file(
+            tmp.path(),
+            "go.mod",
+            "module github.com/example/myapp\n\ngo 1.21\n",
+        );
+
+        let main_go = write_file(
+            tmp.path(),
+            "main.go",
+            r#"
+package main
+
+import (
+    "fmt"
+    "os"
+    "github.com/some/external/dep"
+)
+
+func main() {}
+"#,
+        );
+
+        let imports = extract_imports(&main_go, tmp.path());
+        // External imports (fmt, os, github.com/some/external/dep) should be skipped
+        assert!(
+            imports.is_empty(),
+            "External imports should be skipped, got: {:?}",
+            imports
         );
     }
 }
