@@ -516,14 +516,8 @@ mod tests {
 
         // All query methods should return None when disabled
         assert!(cache.get_scan_findings("any-scan").unwrap().is_none());
-        assert!(cache
-            .get_latest_scan_findings()
-            .unwrap()
-            .is_none());
-        assert!(cache
-            .get_latest_scan_record()
-            .unwrap()
-            .is_none());
+        assert!(cache.get_latest_scan_findings().unwrap().is_none());
+        assert!(cache.get_latest_scan_record().unwrap().is_none());
 
         // record_scan on disabled cache should be a no-op
         let findings = vec![sample_finding()];
@@ -669,10 +663,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
         let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
 
-        assert!(cache
-            .get_scan_findings("nonexistent")
-            .unwrap()
-            .is_none());
+        assert!(cache.get_scan_findings("nonexistent").unwrap().is_none());
     }
 
     #[test]
@@ -680,9 +671,6 @@ mod tests {
         let tmp = tempfile::tempdir().expect("failed to create temp dir for cache test");
         let cache = ScanCache::open(tmp.path()).expect("cache test: failed to open cache");
 
-        assert!(cache
-            .get_latest_scan_findings()
-            .unwrap()
-            .is_none());
+        assert!(cache.get_latest_scan_findings().unwrap().is_none());
     }
 }

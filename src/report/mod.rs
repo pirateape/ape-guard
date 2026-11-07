@@ -1662,4 +1662,220 @@ mod tests {
         assert!(HTML_TEMPLATE.contains("Findings ({{ total_findings }})"));
         assert!(HTML_TEMPLATE.contains("severity-badge"));
     }
+
+    #[test]
+    fn test_generate_report_technical_empty_findings() {
+        let (summary, scorecard, _findings) = create_test_context();
+        let empty_summary = ScanSummary {
+            scan_id: "empty-tech".to_string(),
+            total_findings: 0,
+            findings_by_severity: FindingsBySeverity {
+                critical: 0,
+                high: 0,
+                medium: 0,
+                low: 0,
+                info: 0,
+            },
+            ..summary
+        };
+        let empty_findings: Vec<CanonicalFinding> = vec![];
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let path = generate_report(
+            &ReportType::Technical,
+            &empty_summary,
+            &empty_findings,
+            &scorecard,
+            output_dir,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to generate technical report with empty findings");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("ApeGuard Technical Report"));
+        assert!(content.contains("Total Findings"));
+        assert!(content.contains("| 0 |"));
+    }
+
+    #[test]
+    fn test_generate_report_executive_empty_findings() {
+        let (summary, scorecard, _findings) = create_test_context();
+        let empty_summary = ScanSummary {
+            scan_id: "empty-exec".to_string(),
+            total_findings: 0,
+            findings_by_severity: FindingsBySeverity {
+                critical: 0,
+                high: 0,
+                medium: 0,
+                low: 0,
+                info: 0,
+            },
+            ..summary
+        };
+        let empty_findings: Vec<CanonicalFinding> = vec![];
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let path = generate_report(
+            &ReportType::Executive,
+            &empty_summary,
+            &empty_findings,
+            &scorecard,
+            output_dir,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to generate executive report with empty findings");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("ApeGuard Executive Security Report"));
+        assert!(content.contains("0 findings across"));
+    }
+
+    #[test]
+    fn test_generate_report_roadmap_empty_findings() {
+        let (summary, scorecard, _findings) = create_test_context();
+        let empty_summary = ScanSummary {
+            scan_id: "empty-roadmap".to_string(),
+            total_findings: 0,
+            findings_by_severity: FindingsBySeverity {
+                critical: 0,
+                high: 0,
+                medium: 0,
+                low: 0,
+                info: 0,
+            },
+            ..summary
+        };
+        let empty_findings: Vec<CanonicalFinding> = vec![];
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let path = generate_report(
+            &ReportType::Roadmap,
+            &empty_summary,
+            &empty_findings,
+            &scorecard,
+            output_dir,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to generate roadmap report with empty findings");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("ApeGuard Remediation Roadmap"));
+        assert!(content.contains("*No critical findings.*"));
+        assert!(content.contains("*No high-severity findings.*"));
+    }
+
+    #[test]
+    fn test_generate_report_no_zt_scorecard() {
+        let (summary, _scorecard, findings) = create_test_context();
+        let no_scorecard_summary = ScanSummary {
+            zt_scorecard: None,
+            ..summary
+        };
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let path = generate_report(
+            &ReportType::Technical,
+            &no_scorecard_summary,
+            &findings,
+            &ZeroTrustScorecard {
+                overall_score: 0,
+                max_score: 0,
+                pillars: vec![],
+                pillars_at_advanced_or_higher: 0,
+                target_maturity: MaturityTier::Baseline,
+                classification: PostureClassification::Initial,
+                gap_analysis: vec![],
+            },
+            output_dir,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to generate technical report without zt scorecard");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("Hardcoded Secret"));
+    }
+
+    #[test]
+    fn test_generate_report_with_stride_result() {
+        let (summary, scorecard, findings) = create_test_context();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let stride_result = crate::stride::StrideResult {
+            coverage: vec![],
+            total_findings: findings.len(),
+            covered_categories: 0,
+            coverage_score: 0.0,
+            gaps: vec![],
+            threshold: 0.05,
+        };
+
+        let path = generate_report(
+            &ReportType::Technical,
+            &summary,
+            &findings,
+            &scorecard,
+            output_dir,
+            None,
+            Some(&stride_result),
+            None,
+        )
+        .expect("Failed to generate technical report with stride result");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("Hardcoded Secret"));
+    }
+
+    #[test]
+    fn test_generate_report_with_policy_result() {
+        let (summary, scorecard, findings) = create_test_context();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let policy_result = crate::policy::PolicyResult {
+            enabled: true,
+            policies_loaded: 1,
+            policy_files: vec!["test-policy".to_string()],
+            actions_applied: vec![],
+            blocked_count: 0,
+            escalated_count: 0,
+            downgraded_count: 0,
+            flagged_count: 0,
+            tagged_count: 0,
+            errors: vec![],
+        };
+
+        let path = generate_report(
+            &ReportType::Technical,
+            &summary,
+            &findings,
+            &scorecard,
+            output_dir,
+            None,
+            None,
+            Some(&policy_result),
+        )
+        .expect("Failed to generate technical report with policy result");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("Hardcoded Secret"));
+    }
 }
