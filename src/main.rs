@@ -620,7 +620,9 @@ async fn run_compare(
             html.push_str("<div class=\"summary-box\"><h2>Removed</h2><div class=\"num removed\">");
             html.push_str(&removed.len().to_string());
             html.push_str("</div></div>");
-            html.push_str("<div class=\"summary-box\"><h2>Severity Changed</h2><div class=\"num changed\">");
+            html.push_str(
+                "<div class=\"summary-box\"><h2>Severity Changed</h2><div class=\"num changed\">",
+            );
             html.push_str(&severity_changed.len().to_string());
             html.push_str("</div></div>");
             html.push_str("</div>");
@@ -631,8 +633,16 @@ async fn run_compare(
                     html.push_str("<tr>");
                     html.push_str(&format!("<td class=\"added\"><b>{:?}</b></td>", f.severity));
                     html.push_str(&format!("<td>{}</td>", html_escape(&f.title)));
-                    html.push_str(&format!("<td>{}</td>", html_escape(&f.location.file.display().to_string())));
-                    html.push_str(&format!("<td>{}</td>", f.location.line.map_or_else(|| "-".to_string(), |l| l.to_string())));
+                    html.push_str(&format!(
+                        "<td>{}</td>",
+                        html_escape(&f.location.file.display().to_string())
+                    ));
+                    html.push_str(&format!(
+                        "<td>{}</td>",
+                        f.location
+                            .line
+                            .map_or_else(|| "-".to_string(), |l| l.to_string())
+                    ));
                     html.push_str(&format!("<td>{}</td>", f.scanner));
                     html.push_str(&format!("<td>{}</td>", html_escape(&f.rule_id)));
                     html.push_str("</tr>");
@@ -644,10 +654,21 @@ async fn run_compare(
                 html.push_str("<h2>Removed Findings</h2><table><tr><th>Severity</th><th>Title</th><th>File</th><th>Line</th><th>Scanner</th><th>Rule</th></tr>");
                 for f in &removed {
                     html.push_str("<tr>");
-                    html.push_str(&format!("<td class=\"removed\"><b>{:?}</b></td>", f.severity));
+                    html.push_str(&format!(
+                        "<td class=\"removed\"><b>{:?}</b></td>",
+                        f.severity
+                    ));
                     html.push_str(&format!("<td>{}</td>", html_escape(&f.title)));
-                    html.push_str(&format!("<td>{}</td>", html_escape(&f.location.file.display().to_string())));
-                    html.push_str(&format!("<td>{}</td>", f.location.line.map_or_else(|| "-".to_string(), |l| l.to_string())));
+                    html.push_str(&format!(
+                        "<td>{}</td>",
+                        html_escape(&f.location.file.display().to_string())
+                    ));
+                    html.push_str(&format!(
+                        "<td>{}</td>",
+                        f.location
+                            .line
+                            .map_or_else(|| "-".to_string(), |l| l.to_string())
+                    ));
                     html.push_str(&format!("<td>{}</td>", f.scanner));
                     html.push_str(&format!("<td>{}</td>", html_escape(&f.rule_id)));
                     html.push_str("</tr>");
@@ -661,9 +682,20 @@ async fn run_compare(
                     html.push_str("<tr>");
                     html.push_str(&format!("<td>{}</td>", html_escape(&new.title)));
                     html.push_str(&format!("<td>{:?}</td>", old.severity));
-                    html.push_str(&format!("<td class=\"changed\"><b>{:?}</b></td>", new.severity));
-                    html.push_str(&format!("<td>{}</td>", html_escape(&new.location.file.display().to_string())));
-                    html.push_str(&format!("<td>{}</td>", new.location.line.map_or_else(|| "-".to_string(), |l| l.to_string())));
+                    html.push_str(&format!(
+                        "<td class=\"changed\"><b>{:?}</b></td>",
+                        new.severity
+                    ));
+                    html.push_str(&format!(
+                        "<td>{}</td>",
+                        html_escape(&new.location.file.display().to_string())
+                    ));
+                    html.push_str(&format!(
+                        "<td>{}</td>",
+                        new.location
+                            .line
+                            .map_or_else(|| "-".to_string(), |l| l.to_string())
+                    ));
                     html.push_str("</tr>");
                 }
                 html.push_str("</table>");
