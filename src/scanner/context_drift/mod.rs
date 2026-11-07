@@ -49,12 +49,11 @@ pub(crate) use verify::{
     verify_dependency_claim, verify_path_claim, verify_single_claim, DependencyCache,
 };
 
-use crate::find::{CanonicalFinding, Severity};
-use crate::scanner::{Scanner, ScannerError, ScannerType};
+use crate::find::Severity;
 use std::path::{Path, PathBuf};
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ContextDriftScanner (Scanner trait implementation)
+// ContextDriftScanner — built-in drift scanner (no external binary)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Context Drift Scanner — detects drift between agent context files and codebase reality
@@ -183,41 +182,6 @@ fn count_by_severity(findings: &[DriftFinding]) -> DriftCounts {
         }
     }
     counts
-}
-
-#[async_trait::async_trait]
-impl Scanner for ContextDriftScanner {
-    fn name(&self) -> &'static str {
-        "context-drift"
-    }
-
-    fn scanner_type(&self) -> ScannerType {
-        ScannerType::ContextDrift
-    }
-
-    async fn check_installed(&self) -> Result<bool, ScannerError> {
-        // Context drift scanner is always installed (built-in)
-        Ok(true)
-    }
-
-    async fn version(&self) -> Result<String, ScannerError> {
-        Ok("0.1.0".to_string())
-    }
-
-    async fn scan_raw(&self, _path: &Path) -> Result<Vec<u8>, ScannerError> {
-        // Context drift scanning is file-system based, not binary output
-        Ok(b"Context drift scan complete".to_vec())
-    }
-
-    fn parse_output(&self, _raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {
-        // Context drift scanner doesn't use raw output parsing
-        // It discovers context files and verifies claims directly
-        Ok(vec![])
-    }
-
-    fn install_hint(&self) -> &'static str {
-        "Context drift scanner is built-in to ApeGuard"
-    }
 }
 
 #[cfg(test)]
