@@ -632,7 +632,7 @@ pub fn generate_sarif_report(
                 crate::find::Severity::Medium => "warning",
                 crate::find::Severity::Low | crate::find::Severity::Info => "note",
             };
-            SarifRule {
+            Some(SarifRule {
                 id: format!(
                     "apeguard/{}/{}",
                     format!("{:?}", f.scanner).to_lowercase(),
@@ -651,7 +651,7 @@ pub fn generate_sarif_report(
                     "scanner": format!("{:?}", f.scanner),
                     "zt_pillars": f.zt_pillars,
                 })),
-            }
+            })
         })
         .collect();
 
