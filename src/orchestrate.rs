@@ -41,6 +41,7 @@ use crate::stride;
 /// The output of a successful scan — all data needed by main.rs for reporting.
 #[expect(dead_code)]
 pub(crate) struct ScanOutput {
+    pub scan_id: String,
     pub findings: Vec<find::CanonicalFinding>,
     pub findings_jsonl_path: PathBuf,
     pub started_at: String,
@@ -169,14 +170,14 @@ fn generate_summary_report(
     attack_chains: &[AttackChain],
     zt_scorecard: &ZeroTrustScorecard,
     output_dir: &Path,
+    scan_id: &str,
     report_types: &[cli::ReportType],
     formats: &[cli::OutputFormat],
     stride_result: Option<&stride::StrideResult>,
     policy_result: &policy::PolicyResult,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
-    let scan_id = format!("{:x}", sha2::Sha256::digest(started_at.as_bytes()));
     let summary = find::ScanSummary {
-        scan_id,
+        scan_id: scan_id.to_string(),
         timestamp: started_at.to_string(),
         target: target.to_string(),
         target_hash: format!("{:x}", sha2::Sha256::digest(target.as_bytes())),
@@ -275,6 +276,12 @@ pub(crate) async fn run_scan(
 
     let start = Instant::now();
     let started_at = chrono::Utc::now().to_rfc3339();
+    // Single canonical scan ID for this run — used by reports AND the cache so
+    // `report --snapshot <id>` / `compare <id>` work with the ID shown in reports.
+    let scan_id = format!(
+        "scan_{}",
+        chrono::Utc::now().format("%Y%m%d_%H%M%S%3f")
+    );
     let target_path = PathBuf::from(target);
     let output_path = PathBuf::from(output_dir);
     std::fs::create_dir_all(&output_path).ok();
@@ -633,6 +640,7 @@ pub(crate) async fn run_scan(
         &attack_chains,
         &zt_scorecard,
         &output_path,
+        &scan_id,
         &args.report_types,
         &args.formats,
         stride_result.as_ref(),
@@ -661,6 +669,7 @@ pub(crate) async fn run_scan(
     quiet_println!(args.quiet, "");
 
     Ok(ScanOutput {
+        scan_id,
         findings: final_findings,
         findings_jsonl_path,
         started_at,

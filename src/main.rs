@@ -151,10 +151,9 @@ async fn main() -> anyhow::Result<()> {
             };
             let scan_output = orchestrate::run_scan(scan_args, &cfg).await?;
             if cfg.cache.enabled {
-                let scan_id = format!("scan_{}", Utc::now().format("%Y%m%d_%H%M%S"));
                 let now = Utc::now().to_rfc3339();
                 if let Err(e) = scan_output.cache.record_scan(cache::RecordScanInput {
-                    scan_id: &scan_id,
+                    scan_id: &scan_output.scan_id,
                     target: &target,
                     started_at: &scan_output.started_at,
                     completed_at: &now,

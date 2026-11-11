@@ -236,7 +236,6 @@ impl ZapScanner {
 mod tests {
     use super::*;
     use crate::find::{Confidence, Severity};
-    use std::path::PathBuf;
 
     #[test]
     fn test_parse_zap_json_empty() {
