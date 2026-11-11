@@ -49,6 +49,23 @@ impl ScoreWeights {
 #[derive(Debug, Clone)]
 pub struct ScoringContext<'a> {
     pub chains: &'a [AttackChain],
+    /// Precomputed finding-id -> number of chains containing it. Built once in
+    /// `ScoringContext::new` so `dimension_chain` is O(1) per finding instead of
+    /// scanning every chain's finding list (O(findings x chains x chain_size)).
+    pub chain_counts: std::collections::HashMap<String, usize>,
+}
+
+impl<'a> ScoringContext<'a> {
+    /// Build a scoring context, precomputing chain-membership counts.
+    pub fn new(chains: &'a [AttackChain]) -> Self {
+        let mut chain_counts = std::collections::HashMap::new();
+        for chain in chains {
+            for id in &chain.finding_ids {
+                *chain_counts.entry(id.clone()).or_insert(0) += 1;
+            }
+        }
+        Self { chains, chain_counts }
+    }
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
@@ -62,7 +79,7 @@ pub fn score_all_findings(
     chains: &[AttackChain],
     weights: &ScoreWeights,
 ) {
-    let context = ScoringContext { chains };
+    let context = ScoringContext::new(chains);
 
     for finding in findings.iter_mut() {
         let score = compute_finding_risk(finding, &context, weights);
@@ -227,10 +244,10 @@ fn dimension_context(finding: &CanonicalFinding) -> f32 {
 
 fn dimension_chain(finding: &CanonicalFinding, context: &ScoringContext) -> f32 {
     let chain_count = context
-        .chains
-        .iter()
-        .filter(|c| c.finding_ids.contains(&finding.id))
-        .count();
+        .chain_counts
+        .get(&finding.id)
+        .copied()
+        .unwrap_or(0);
 
     match chain_count {
         0 => 0.3,
@@ -395,7 +412,7 @@ mod tests {
     #[test]
     fn test_confidence_no_cross_refs() {
         let finding = make_finding("F-1", Severity::High, "src/main.rs", 0, 0, None);
-        let ctx = ScoringContext { chains: &[] };
+        let ctx = ScoringContext::new(&[]);
         let score = dimension_confidence(&finding, &ctx);
         assert!((score - 0.4).abs() < 0.01);
     }
@@ -403,7 +420,7 @@ mod tests {
     #[test]
     fn test_confidence_with_cross_refs() {
         let finding = make_finding("F-1", Severity::High, "src/main.rs", 2, 0, None);
-        let ctx = ScoringContext { chains: &[] };
+        let ctx = ScoringContext::new(&[]);
         let score = dimension_confidence(&finding, &ctx);
         assert!((score - 0.8).abs() < 0.01);
     }
@@ -421,7 +438,7 @@ mod tests {
                 reason_category: RejectReason::TestCode,
             }),
         );
-        let ctx = ScoringContext { chains: &[] };
+        let ctx = ScoringContext::new(&[]);
         let score = dimension_confidence(&finding, &ctx);
         assert!((score - 0.05).abs() < 0.01);
     }
@@ -439,7 +456,7 @@ mod tests {
                 reasoning: "real".into(),
             }),
         );
-        let ctx = ScoringContext { chains: &[] };
+        let ctx = ScoringContext::new(&[]);
         let score = dimension_confidence(&finding, &ctx);
         // Base 0.4 + boost 0.3 = 0.7
         assert!((score - 0.7).abs() < 0.01);
@@ -501,7 +518,7 @@ mod tests {
     #[test]
     fn test_chain_not_in_any() {
         let finding = make_finding("F-1", Severity::High, "src/main.rs", 0, 0, None);
-        let ctx = ScoringContext { chains: &[] };
+        let ctx = ScoringContext::new(&[]);
         let score = dimension_chain(&finding, &ctx);
         assert!((score - 0.3).abs() < 0.01);
     }
@@ -510,7 +527,7 @@ mod tests {
     fn test_chain_in_one() {
         let finding = make_finding("F-1", Severity::High, "src/main.rs", 0, 0, None);
         let chains = vec![make_chain(vec!["F-1".into(), "F-2".into()])];
-        let ctx = ScoringContext { chains: &chains };
+        let ctx = ScoringContext::new(&chains);
         let score = dimension_chain(&finding, &ctx);
         assert!((score - 0.7).abs() < 0.01);
     }
@@ -522,7 +539,7 @@ mod tests {
             make_chain(vec!["F-1".into(), "F-2".into()]),
             make_chain(vec!["F-1".into(), "F-3".into()]),
         ];
-        let ctx = ScoringContext { chains: &chains };
+        let ctx = ScoringContext::new(&chains);
         let score = dimension_chain(&finding, &ctx);
         assert!((score - 0.9).abs() < 0.01);
     }
@@ -610,7 +627,7 @@ mod tests {
     #[test]
     fn test_critical_finding_scores_high() {
         let finding = make_finding("F-1", Severity::Critical, "src/auth/login.rs", 1, 1, None);
-        let ctx = ScoringContext { chains: &[] };
+        let ctx = ScoringContext::new(&[]);
         let weights = ScoreWeights::default();
         let score = compute_finding_risk(&finding, &ctx, &weights);
         assert!(
@@ -634,7 +651,7 @@ mod tests {
                 reason_category: RejectReason::TestCode,
             }),
         );
-        let ctx = ScoringContext { chains: &[] };
+        let ctx = ScoringContext::new(&[]);
         let weights = ScoreWeights::default();
         let score = compute_finding_risk(&finding, &ctx, &weights);
         assert!(
@@ -648,10 +665,10 @@ mod tests {
     fn test_chain_finding_boosted() {
         let finding = make_finding("F-1", Severity::High, "src/main.rs", 0, 0, None);
         let chains = vec![make_chain(vec!["F-1".into()])];
-        let ctx = ScoringContext { chains: &chains };
+        let ctx = ScoringContext::new(&chains);
         let weights = ScoreWeights::default();
         let score_no_chain =
-            compute_finding_risk(&finding, &ScoringContext { chains: &[] }, &weights);
+            compute_finding_risk(&finding, &ScoringContext::new(&[]), &weights);
         let score_with_chain = compute_finding_risk(&finding, &ctx, &weights);
         assert!(
             score_with_chain.overall > score_no_chain.overall,
