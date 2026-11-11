@@ -205,7 +205,7 @@ pub fn load(args: &cli::Args) -> anyhow::Result<Config> {
         let path = PathBuf::from(config_path);
         if path.exists() {
             let contents = std::fs::read_to_string(&path)?;
-            let file_cfg: Config = serde_yaml::from_str(&contents)?;
+            let file_cfg: Config = serde_yaml_ng::from_str(&contents)?;
             merge(&mut cfg, file_cfg);
         }
     } else {
@@ -218,7 +218,7 @@ pub fn load(args: &cli::Args) -> anyhow::Result<Config> {
         for p in &auto_paths {
             if p.exists() {
                 let contents = std::fs::read_to_string(p)?;
-                let file_cfg: Config = serde_yaml::from_str(&contents)?;
+                let file_cfg: Config = serde_yaml_ng::from_str(&contents)?;
                 merge(&mut cfg, file_cfg);
                 break;
             }
@@ -445,7 +445,7 @@ pub fn generate_init(path: Option<String>, _template: cli::InitTemplate) -> anyh
     }
 
     let default_cfg = Config::default();
-    let yaml = serde_yaml::to_string(&default_cfg)?;
+    let yaml = serde_yaml_ng::to_string(&default_cfg)?;
 
     // Add helpful comments
     let commented = format!(
@@ -572,9 +572,9 @@ mod tests {
     #[test]
     fn test_config_yaml_roundtrip() {
         let cfg = Config::default();
-        let yaml = serde_yaml::to_string(&cfg).expect("config test: failed to serialize YAML");
+        let yaml = serde_yaml_ng::to_string(&cfg).expect("config test: failed to serialize YAML");
         let parsed: Config =
-            serde_yaml::from_str(&yaml).expect("config test: failed to deserialize YAML");
+            serde_yaml_ng::from_str(&yaml).expect("config test: failed to deserialize YAML");
         assert_eq!(cfg.layers, parsed.layers);
         assert_eq!(cfg.severity, parsed.severity);
         assert_eq!(cfg.cache.enabled, parsed.cache.enabled);
@@ -592,7 +592,7 @@ cache:
   path: "/tmp/cache"
   ttl_hours: 48
 "#;
-        let cfg: Config = serde_yaml::from_str(yaml).expect("config test: failed to parse YAML");
+        let cfg: Config = serde_yaml_ng::from_str(yaml).expect("config test: failed to parse YAML");
         assert_eq!(cfg.layers, vec![1, 5]);
         assert_eq!(cfg.severity, "critical");
         assert!(!cfg.cache.enabled);
