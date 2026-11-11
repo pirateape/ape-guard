@@ -242,11 +242,7 @@ fn dimension_context(finding: &CanonicalFinding) -> f32 {
 // ─── Dimension: Chain Position (0.0–1.0) ──────────────────────────────────────
 
 fn dimension_chain(finding: &CanonicalFinding, context: &ScoringContext) -> f32 {
-    let chain_count = context
-        .chain_counts
-        .get(&finding.id)
-        .copied()
-        .unwrap_or(0);
+    let chain_count = context.chain_counts.get(&finding.id).copied().unwrap_or(0);
 
     match chain_count {
         0 => 0.3,
@@ -666,8 +662,7 @@ mod tests {
         let chains = vec![make_chain(vec!["F-1".into()])];
         let ctx = ScoringContext::new(&chains);
         let weights = ScoreWeights::default();
-        let score_no_chain =
-            compute_finding_risk(&finding, &ScoringContext::new(&[]), &weights);
+        let score_no_chain = compute_finding_risk(&finding, &ScoringContext::new(&[]), &weights);
         let score_with_chain = compute_finding_risk(&finding, &ctx, &weights);
         assert!(
             score_with_chain.overall > score_no_chain.overall,

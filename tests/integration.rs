@@ -251,3 +251,167 @@ def run_command(cmd):
         "Regenerated technical report should exist"
     );
 }
+
+#[test]
+fn test_resume_reloads_findings_from_previous_run() {
+    // Regression test for the resume bug: `--resume` must reload findings
+    // persisted by the previous run. With all layers already complete, a
+    // resumed scan must regenerate the SAME findings — not an empty report.
+    let tmpdir = tempfile::tempdir().expect("failed to create temp dir for integration test");
+
+    // Seed a leaky token so layer 1 (Gitleaks) reliably finds it. Scanners not
+    // installed on the machine report "not installed" and are still recorded
+    // in the JSONL, so resume works regardless of which scanners are present.
+    std::fs::write(
+        tmpdir.path().join("secrets.env"),
+        "token = \"ghp_R8qYv2XwB7nK4mT9zJcL3dF6aS1hG0qW5e\"\n",
+    )
+    .unwrap();
+
+    let target = tmpdir.path().to_str().unwrap().to_string();
+    let output_dir = tmpdir.path().join("reports");
+    let output_dir_str = output_dir.to_str().unwrap().to_string();
+
+    // Run 1: full scan (no cache so the run is deterministic)
+    let mut cmd = Command::cargo_bin(BINARY).unwrap();
+    cmd.args([
+        "scan",
+        &target,
+        "--layers",
+        "1",
+        "--no-cache",
+        "--format",
+        "md,json",
+        "--output-dir",
+        &output_dir_str,
+    ])
+    .assert()
+    .success();
+
+    // The JSONL must contain finding lines (persisted for resume)
+    let jsonl_path = output_dir.join("found_findings.jsonl");
+    assert!(
+        jsonl_path.exists(),
+        "found_findings.jsonl should exist after a scan"
+    );
+    let jsonl = std::fs::read_to_string(&jsonl_path).unwrap();
+    assert!(
+        jsonl.contains("\"status\":\"complete\"") || jsonl.contains("\"status\": \"complete\""),
+        "JSONL should contain a complete status line"
+    );
+
+    // Count finding lines in run 1
+    let finding_lines_run1 = jsonl
+        .lines()
+        .filter(|l| l.contains("\"status\":\"finding\"") || l.contains("\"status\": \"finding\""))
+        .count();
+    assert!(
+        finding_lines_run1 > 0,
+        "JSONL should persist findings — gitleaks must detect the seeded token"
+    );
+
+    // Run 2: resume with all layers already complete. The report must NOT be
+    // empty when run 1 produced findings — resume reloads persisted results.
+    if finding_lines_run1 > 0 {
+        let json_report = output_dir.join("apeguard-report.json");
+        let before: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&json_report).expect("run-1 JSON report"),
+        )
+        .expect("run-1 JSON should parse");
+
+        let mut cmd = Command::cargo_bin(BINARY).unwrap();
+        cmd.args([
+            "scan",
+            &target,
+            "--layers",
+            "1",
+            "--resume",
+            "--no-cache",
+            "--format",
+            "md,json",
+            "--output-dir",
+            &output_dir_str,
+        ])
+        .assert()
+        .success();
+
+        let after: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&json_report).expect("resumed JSON report"),
+        )
+        .expect("resumed JSON should parse");
+
+        assert_eq!(
+            before["findings"].as_array().map(|a| a.len()),
+            after["findings"].as_array().map(|a| a.len()),
+            "resumed scan must reload the same findings as the original run \
+             (empty reports on full resume were the pre-fix bug)"
+        );
+    }
+}
+
+#[test]
+fn test_scan_id_consistent_between_report_and_cache() {
+    // Regression test for the dual-scan-ID bug: the scan ID printed in reports
+    // must be the same ID stored in the cache, so `report --snapshot <id>` and
+    // `compare <id>` work with the ID the user can actually see.
+    let tmpdir = tempfile::tempdir().expect("failed to create temp dir for integration test");
+    std::fs::write(
+        tmpdir.path().join("config.py"),
+        "API_KEY = \"sk-aaaaaabbbbbbccccccccccdddddddd\"",
+    )
+    .unwrap();
+
+    let target = tmpdir.path().to_str().unwrap().to_string();
+    let output_dir = tmpdir.path().join("reports");
+    let output_dir_str = output_dir.to_str().unwrap().to_string();
+
+    let mut cmd = Command::cargo_bin(BINARY).unwrap();
+    cmd.args([
+        "scan",
+        &target,
+        "--layers",
+        "1",
+        "--format",
+        "md,json",
+        "--output-dir",
+        &output_dir_str,
+    ])
+    .assert()
+    .success();
+
+    // The JSON report carries the canonical scan ID
+    let json_report = output_dir.join("apeguard-report.json");
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json_report).expect("JSON report"))
+            .expect("JSON should parse");
+    let scan_id = report["summary"]["scan_id"]
+        .as_str()
+        .expect("scan_id in JSON report")
+        .to_string();
+
+    assert!(
+        scan_id.starts_with("scan_"),
+        "scan ID should use the canonical scan_{{timestamp}} format, got: {scan_id}"
+    );
+
+    // That same ID must be usable as a snapshot for report regeneration —
+    // before the fix this failed with "Scan snapshot ... not found in cache".
+    let regen_dir = tmpdir.path().join("regen-by-id");
+    let mut cmd = Command::cargo_bin(BINARY).unwrap();
+    cmd.args([
+        "report",
+        &target,
+        "--snapshot",
+        &scan_id,
+        "--output-dir",
+        regen_dir.to_str().unwrap(),
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(&scan_id));
+
+    assert!(
+        regen_dir.join("technical-report.md").exists(),
+        "report --snapshot <id from report> should regenerate reports"
+    );
+}
