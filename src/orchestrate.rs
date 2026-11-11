@@ -477,11 +477,22 @@ pub(crate) async fn run_scan(
     let mut all_findings: Vec<find::CanonicalFinding> = Vec::new();
     let mut scanners_used: Vec<String> = Vec::new();
 
+    // Cap concurrent scanner processes: a full 12-layer scan with many
+    // containers would otherwise spawn dozens of simultaneous scanner binaries.
+    const MAX_CONCURRENT_SCANNERS: usize = 8;
+    let scanner_semaphore =
+        std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SCANNERS));
+
     let scan_results = join_all(scanners.iter().map(|s| {
         let name = s.name();
+        let semaphore = std::sync::Arc::clone(&scanner_semaphore);
+        let target = std::path::PathBuf::clone(&target_path);
         tracing::info!("Running scanner: {}", name);
-        async {
-            let result = s.scan(&target_path).await;
+        async move {
+            // Acquire inside the task: every task is spawned immediately, but
+            // only MAX_CONCURRENT_SCANNERS run their scanner at a time.
+            let _permit = semaphore.acquire_owned().await;
+            let result = s.scan(&target).await;
             (name.to_string(), result)
         }
     }))
