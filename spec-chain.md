@@ -36,9 +36,13 @@ recommendation.
 ## Invariants
 
 - Chain rule predicates require structured attributes (CWE/tags/scanner); keyword fallback
-  is available for backward compatibility.
+  uses word-boundary matching (a bare `"key"` does not match `"monkey"`).
 - Already-chained finding IDs are excluded from later grouping strategies to avoid
   duplicate chains.
+- Rules with identical predicate sets (Credential Compromise and Data Exfiltration;
+  Supply Chain Attack and Infrastructure Escalation) fire on the same finding set.
+  `evaluate_rules_on_group` sorts matching rules by `risk_multiplier` descending and
+  emits only the highest-multiplier rule per distinct finding set — no duplicate chains.
 
 ## Tests
 

@@ -21,11 +21,16 @@ entry points, to flag dead-code findings (unreachable = lower risk). Pipeline:
    index.js, main.go, …) plus user-specified globs.
 2. `collect_source_files` — gather source files by extension, excluding vendor/build dirs.
 3. `build_import_graph` — regex-based import extraction (Rust `use crate::`/`mod`, Python
-   `import`/`from`, JS `import`/`require`, Go, C `#include`) into an `Rc<PathBuf>`
-   adjacency list + reverse graph.
+   `import`/`from`, JS `import`/`require`, Go module-path imports, C `#include`) into an
+   `Rc<PathBuf>` adjacency list + reverse graph.
 4. `bfs_reachable_files` — transitive closure from entry points.
-5. `analyze_reachability` / `apply_reachability` — set `finding.reachable = Some(true/false)`
-   or `None` (no meaningful path / analysis not run).
+5. `analyze_reachability` / `apply_reachability` — set `finding.reachable`:
+   - `Some(true)` — file transitively reachable from an entry point,
+   - `Some(false)` — file WAS part of the import graph but is not reachable (dead code),
+   - `None` — file was never part of the analysis (.env, Dockerfile, lockfiles) or has no
+     meaningful path. Never-analyzed files must NOT read as unreachable.
+   Relative finding paths are resolved against both CWD and the scan target (Gitleaks
+   emits paths relative to `--source`).
 
 `ReachabilityConfig { enabled, entry_points, include_extensions, exclude_dirs }`.
 

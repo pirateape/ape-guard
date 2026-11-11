@@ -82,7 +82,13 @@ pub async fn run_command_with_timeout(
     args: &[&str],
     timeout_secs: u64,
 ) -> Result<Vec<u8>, ScannerError> {
-    let cmd = tokio::process::Command::new(binary).args(args).output();
+    // kill_on_drop: on timeout the `output()` future is dropped by
+    // tokio::time::timeout — without this the child scanner process would be
+    // orphaned and keep running (Trivy DB downloads, long DAST runs, …).
+    let cmd = tokio::process::Command::new(binary)
+        .args(args)
+        .kill_on_drop(true)
+        .output();
 
     let timeout_dur = Duration::from_secs(timeout_secs);
     match tokio::time::timeout(timeout_dur, cmd).await {
@@ -109,7 +115,12 @@ pub async fn run_command_with_timeout_lenient(
     args: &[&str],
     timeout_secs: u64,
 ) -> Result<Vec<u8>, ScannerError> {
-    let cmd = tokio::process::Command::new(binary).args(args).output();
+    // kill_on_drop: see run_command_with_timeout — prevents orphaned children
+    // when the timeout fires.
+    let cmd = tokio::process::Command::new(binary)
+        .args(args)
+        .kill_on_drop(true)
+        .output();
 
     let timeout_dur = Duration::from_secs(timeout_secs);
     match tokio::time::timeout(timeout_dur, cmd).await {

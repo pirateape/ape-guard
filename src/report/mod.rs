@@ -961,7 +961,7 @@ const HTML_TEMPLATE: &str = r##"<!DOCTYPE html>
 
   {% if arch_diagram %}
   <h2>Architecture Risk Diagram</h2>
-  <div class="arch-diagram"><pre>{{ arch_diagram | safe }}</pre></div>
+  <div class="arch-diagram"><pre>{{ arch_diagram }}</pre></div>
   {% endif %}
 
   {% if has_stride %}
@@ -1608,7 +1608,8 @@ mod tests {
 
         let content =
             std::fs::read_to_string(path).expect("report test: failed to read output file");
-        assert!(content.contains("graph TD; A-->B;"));
+        // Tera autoescape escapes the `>` in `-->` (correct behavior)
+        assert!(content.contains("graph TD; A--&gt;B;"));
         assert!(content.contains("Architecture Risk Diagram"));
     }
 
@@ -1652,6 +1653,77 @@ mod tests {
             std::fs::read_to_string(path).expect("report test: failed to read output file");
         assert!(content.contains("ApeGuard Security Report"));
         assert!(content.contains("Findings (0)"));
+    }
+
+    #[test]
+    fn test_html_report_escapes_untrusted_finding_fields() {
+        // Finding fields and the architecture diagram come from scanned
+        // repositories (untrusted). They must be HTML-escaped in the report.
+        let (mut summary, scorecard, mut findings) = create_test_context();
+        summary.scan_id = "xss-test".to_string();
+        findings[0].title = "<script>alert('title')</script>".to_string();
+        findings[0].description = "<img src=x onerror=alert('desc')>".to_string();
+
+        let malicious_diagram = "<img src=x onerror=alert('diag')>\ngraph TD; A-->B;";
+
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let path = generate_html_report(
+            &summary,
+            &findings,
+            &scorecard,
+            output_dir,
+            Some(malicious_diagram),
+            None,
+            None,
+        )
+        .expect("Failed to generate HTML report");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+
+        // Raw payloads must NOT appear anywhere in the HTML
+        assert!(
+            !content.contains("<script>alert"),
+            "unescaped <script> found in HTML report — stored XSS"
+        );
+        assert!(
+            !content.contains("<img src=x"),
+            "unescaped <img> found in HTML report — stored XSS"
+        );
+
+        // Escaped forms must appear instead
+        assert!(
+            content.contains("&lt;script&gt;"),
+            "finding title should be HTML-escaped"
+        );
+        assert!(
+            content.contains("&lt;img"),
+            "arch diagram should be HTML-escaped (no `| safe` bypass)"
+        );
+    }
+
+    #[test]
+    fn test_debug_diagram_output() {
+        let (summary, scorecard, findings) = create_test_context();
+        let tmp = tempfile::tempdir().expect("tmp");
+        let path = generate_html_report(
+            &summary,
+            &findings,
+            &scorecard,
+            tmp.path(),
+            Some("graph TD; A-->B;"),
+            None,
+            None,
+        )
+        .expect("gen");
+        let content = std::fs::read_to_string(&path).expect("read");
+        for line in content.lines() {
+            if line.contains("graph") || line.contains("arch-diagram") {
+                println!("LINE: {}", line);
+            }
+        }
     }
 
     #[test]

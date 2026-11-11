@@ -16,10 +16,11 @@ tags: []
 ## Responsibility
 
 `src/dedup.rs` provides two functions:
-- `deduplicate(findings)` — drops exact duplicates keyed by `(file, line, rule_id)`;
-  findings with `line == None` are always kept (cannot confirm a duplicate location).
-  Priority: first-seen finding at a key wins (higher-confidence scanner preference is
-  documented but not enforced).
+- `deduplicate(findings)` — drops exact duplicates keyed by `(file, line, rule_id)`.
+  When `line` is `None` (e.g. Trivy vulnerability findings), the same file + rule_id
+  IS confirmably the same finding, so dedup applies there too. Different rule_ids
+  at the same location are always both kept (two different CVEs can appear at the
+  same location).
 - `cross_reference(findings)` — links findings at the same `(file, line)` regardless of
   `rule_id`, so different scanners/rules at one location cross-reference each other;
   avoids duplicate `(scanner, rule_id)` refs and self-references.
@@ -32,7 +33,8 @@ tags: []
 ## Invariant
 
 - Dedup key is `(file, line, rule_id)`; same file+line with different rule_ids are both kept
-  (two different CVEs can appear at the same location).
+  (two different CVEs can appear at the same location). When `line` is `None`, the key
+  degrades to `(file, None, rule_id)` — same file + same rule is the same finding.
 
 ## Tests
 

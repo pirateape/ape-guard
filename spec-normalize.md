@@ -17,7 +17,7 @@ tags: []
 
 `src/normalize.rs` post-processes raw findings into a unified, enriched format:
 1. Gitleaks rule→severity overrides (`GITLEAKS_SEVERITY_MAP`, e.g. aws-access-token → Critical).
-2. Zero Trust pillar keyword mapping (`ZT_MAPPINGS`, 12 UZTF pillars → keyword associations), with default pillar fallback `"applications"`.
+2. Zero Trust pillar keyword mapping (`ZT_MAPPINGS`, 12 UZTF pillars → keyword associations), with default pillar fallback `"applications"`. Keyword matching is **word-boundary** matched (`normalize::keyword_match`): a keyword must be bounded by non-alphanumeric characters, so `"ot "` does not match `"not "`, `"port"` does not match `"important"`, `"key"` does not match `"monkey"`, `"api"` does not match `"capital"`.
 3. MITRE ATT&CK tactic mapping (`mitre_mapping`, e.g. secret → TA0006 Credential Access).
 4. `compute_zt_scorecard` — per-pillar score (100 − severity-weighted deduction, floored 0), maturity tier (Baseline <51 / Advanced ≥51 / Adaptive 100), overall scorecard (0–1200), posture classification (Initial / MostlyBaseline / MostlyAdvanced / MostlyAdaptive), gap analysis per pillar.
 5. `compute_gap_analysis` — gap level (None/Small/Medium/Large) vs target maturity `Advanced`.

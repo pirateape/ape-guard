@@ -21,6 +21,7 @@ impl ZapScanner {
     }
 
     /// Use a custom binary path (e.g. from config)
+    #[expect(dead_code)] // P3/P4: alternative constructor not wired; binary path via config instead
     pub fn with_binary(target: &str, path: Option<String>) -> Self {
         ZapScanner {
             binary: path.unwrap_or_else(|| "zap-cli".to_string()),
@@ -124,14 +125,12 @@ impl ZapScanner {
         }
 
         #[derive(Deserialize)]
-        #[expect(dead_code)]
         struct ZapReport {
             #[serde(rename = "site")]
             site: Option<Vec<ZapSite>>,
         }
 
         #[derive(Deserialize)]
-        #[expect(dead_code)]
         struct ZapSite {
             #[serde(rename = "alerts")]
             alerts: Option<Vec<ZapAlert>>,

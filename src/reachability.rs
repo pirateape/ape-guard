@@ -24,6 +24,9 @@ pub struct ReachabilityResult {
     pub enabled: bool,
     /// Set of file paths found to be transitively reachable from entry points
     pub reachable_files: HashSet<PathBuf>,
+    /// Canonical set of every file that was part of the import graph — used to
+    /// distinguish "analyzed but unreachable" from "never analyzed"
+    pub analyzed_files: HashSet<PathBuf>,
     /// All entry points discovered and used for the analysis
     pub entry_points: Vec<PathBuf>,
     /// Number of files in the import graph
@@ -853,6 +856,7 @@ pub fn analyze_reachability(
         return ReachabilityResult {
             enabled: false,
             reachable_files: HashSet::new(),
+            analyzed_files: HashSet::new(),
             entry_points: vec![],
             total_files_analyzed: 0,
             total_imports: 0,
@@ -884,6 +888,7 @@ pub fn analyze_reachability(
         return ReachabilityResult {
             enabled: true,
             reachable_files: HashSet::new(),
+            analyzed_files: all_files.iter().map(|p| canonicalize_path(p)).collect(),
             entry_points,
             total_files_analyzed: all_files.len(),
             total_imports: 0,
@@ -912,9 +917,15 @@ pub fn analyze_reachability(
         .map(|p| canonicalize_path(p))
         .collect();
 
+    // Canonical set of every file that was part of the import graph. Needed by
+    // apply_reachability to distinguish "analyzed but unreachable" (dead code)
+    // from "never analyzed" (.env, Dockerfile, lockfiles — reachability unknown).
+    let analyzed_files: HashSet<PathBuf> = all_files.iter().map(|p| canonicalize_path(p)).collect();
+
     ReachabilityResult {
         enabled: true,
         reachable_files: reachable_canon,
+        analyzed_files,
         entry_points,
         total_files_analyzed: all_files.len(),
         total_imports,
@@ -925,8 +936,20 @@ pub fn analyze_reachability(
 }
 
 /// Apply reachability results to a mutable findings list.
-/// Sets `finding.reachable = Some(true/false)` based on file path membership.
-pub fn apply_reachability(findings: &mut [CanonicalFinding], result: &ReachabilityResult) {
+///
+/// `finding.reachable` is set to:
+/// - `Some(true)` when the finding's file is transitively reachable from an entry point,
+/// - `Some(false)` when the file was part of the import graph but is NOT reachable (dead code),
+/// - `None` when the file was never part of the analysis (.env, Dockerfile, lockfiles, …) —
+///   reachability is unknown and must not be read as "unreachable".
+///
+/// Finding paths may be relative to the scan target (e.g. Gitleaks reports paths
+/// relative to `--source`), so each path is resolved against both CWD and `target`.
+pub fn apply_reachability(
+    findings: &mut [CanonicalFinding],
+    result: &ReachabilityResult,
+    target: &Path,
+) {
     let mut reachable_count = 0usize;
     let mut unreachable_count = 0usize;
     let mut unknown_count = 0usize;
@@ -942,19 +965,28 @@ pub fn apply_reachability(findings: &mut [CanonicalFinding], result: &Reachabili
             continue;
         }
 
-        let canonical = canonicalize_path(file_path);
+        // Candidate resolutions: relative paths may be CWD-relative or target-relative
+        let mut candidates: Vec<PathBuf> = vec![canonicalize_path(file_path)];
+        if file_path.is_relative() {
+            candidates.push(canonicalize_path(&target.join(file_path)));
+        }
 
-        if result.reachable_files.contains(&canonical) {
+        let is_reachable = candidates
+            .iter()
+            .any(|c| result.reachable_files.contains(c));
+        let is_analyzed = candidates.iter().any(|c| result.analyzed_files.contains(c));
+
+        if is_reachable {
             finding.reachable = Some(true);
             reachable_count += 1;
-        } else if result.reachable_files.is_empty() && result.total_files_analyzed == 0 {
-            // Analysis was not run — leave as None
-            finding.reachable = None;
-            unknown_count += 1;
-        } else {
-            // File exists in the graph but is not reachable
+        } else if is_analyzed {
+            // File was in the import graph but not reachable — dead code
             finding.reachable = Some(false);
             unreachable_count += 1;
+        } else {
+            // File was never part of the analysis — reachability unknown
+            finding.reachable = None;
+            unknown_count += 1;
         }
     }
 
@@ -1324,6 +1356,7 @@ mod tests {
         let reachable_file = write_file(tmp.path(), "src/main.rs", "fn main() {}");
         let unreachable_file = write_file(tmp.path(), "src/dead.rs", "fn dead() {}");
         let reachable_canon = canonicalize_path(&reachable_file);
+        let unreachable_canon = canonicalize_path(&unreachable_file);
 
         let mut findings = vec![
             CanonicalFinding {
@@ -1365,9 +1398,13 @@ mod tests {
         ];
 
         let reachable_set: HashSet<PathBuf> = [reachable_canon.clone()].into();
+        let analyzed_set: HashSet<PathBuf> = [reachable_canon.clone(), unreachable_canon.clone()]
+            .into_iter()
+            .collect();
         let result = ReachabilityResult {
             enabled: true,
             reachable_files: reachable_set,
+            analyzed_files: analyzed_set,
             entry_points: vec![reachable_canon.clone()],
             total_files_analyzed: 2,
             total_imports: 0,
@@ -1376,11 +1413,90 @@ mod tests {
             findings_unknown: 3, // Before apply
         };
 
-        apply_reachability(&mut findings, &result);
+        apply_reachability(&mut findings, &result, tmp.path());
 
         assert_eq!(findings[0].reachable, Some(true));
         assert_eq!(findings[1].reachable, Some(false));
         assert_eq!(findings[2].reachable, None); // "." — no meaningful path
+    }
+
+    #[test]
+    fn test_apply_reachability_never_analyzed_file_is_unknown() {
+        // A file that was never part of the import graph (.env, Dockerfile, …)
+        // must NOT be marked unreachable — reachability is unknown.
+        let tmp = create_temp_dir();
+        let main_file = write_file(tmp.path(), "src/main.rs", "fn main() {}");
+        let main_canon = canonicalize_path(&main_file);
+
+        let mut findings = vec![CanonicalFinding {
+            id: "F-ENV".into(),
+            location: crate::find::FindingLocation {
+                file: PathBuf::from(".env"),
+                line: Some(1),
+                column: None,
+                commit: None,
+                author: None,
+                snippet: None,
+            },
+            ..create_minimal_finding()
+        }];
+
+        let result = ReachabilityResult {
+            enabled: true,
+            reachable_files: [main_canon.clone()].into_iter().collect(),
+            analyzed_files: [main_canon].into_iter().collect(),
+            entry_points: vec![],
+            total_files_analyzed: 1,
+            total_imports: 0,
+            findings_reachable: 0,
+            findings_unreachable: 0,
+            findings_unknown: 1,
+        };
+
+        apply_reachability(&mut findings, &result, tmp.path());
+        assert_eq!(
+            findings[0].reachable, None,
+            ".env was never analyzed — reachable must stay None, not Some(false)"
+        );
+    }
+
+    #[test]
+    fn test_apply_reachability_target_relative_paths() {
+        // Gitleaks reports paths relative to the scan target. When the target
+        // is not the CWD, relative finding paths must resolve against the target.
+        let tmp = create_temp_dir();
+        let main_file = write_file(tmp.path(), "src/main.rs", "fn main() {}");
+        let main_canon = canonicalize_path(&main_file);
+
+        // Finding with a target-relative path (what Gitleaks emits)
+        let mut findings = vec![CanonicalFinding {
+            id: "F-GL".into(),
+            location: crate::find::FindingLocation {
+                file: PathBuf::from("src/main.rs"),
+                line: Some(1),
+                column: None,
+                commit: None,
+                author: None,
+                snippet: None,
+            },
+            ..create_minimal_finding()
+        }];
+
+        let result = ReachabilityResult {
+            enabled: true,
+            reachable_files: [main_canon].into_iter().collect(),
+            analyzed_files: HashSet::new(),
+            entry_points: vec![],
+            total_files_analyzed: 1,
+            total_imports: 0,
+            findings_reachable: 0,
+            findings_unreachable: 0,
+            findings_unknown: 1,
+        };
+
+        // tmp.path() differs from CWD — resolution must go through target
+        apply_reachability(&mut findings, &result, tmp.path());
+        assert_eq!(findings[0].reachable, Some(true));
     }
 
     /// Helper to create a minimal CanonicalFinding for testing

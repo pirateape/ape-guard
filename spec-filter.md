@@ -18,9 +18,17 @@ tags: []
 `src/filter.rs` applies a 6-stage false-positive suppression pipeline after dedup and
 before LLM grading: (1) path-based exclusions (test/vendor/examples + custom patterns),
 (2) test-code suppression (info/low in test files), (3) cross-scanner confirmation (require
-2+ scanners for low/info), (4) AI-grade rejection (drop grader-rejected findings),
-(5) confidence threshold (drop below min_confidence), (6) severity floor (drop below
-min_severity). Returns filtered findings + `FilterStats` (counts per stage + total removed).
+2+ scanners for low/info), (4) AI-grade rejection (drop grader-rejected findings from
+PREVIOUS runs — see post-grade pass below), (5) confidence threshold (drop below
+min_confidence), (6) severity floor (drop below min_severity). Returns filtered findings +
+`FilterStats` (counts per stage + total removed).
+
+## Post-grading grade-rejection pass
+
+The pipeline runs the FP filter BEFORE `grade::grade_findings`, so this run's grade
+verdicts are not visible to stage 4. After grading, `filter::apply_grade_rejection`
+drops findings the grader just rejected (`GradeVerdict::Rejected`) so proven false
+positives never reach reports, the ZT scorecard, or CI fail-on checks.
 
 ## Boundary
 

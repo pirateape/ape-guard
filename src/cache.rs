@@ -292,7 +292,7 @@ impl ScanCache {
     }
 
     /// Get the last N scan summaries
-    #[expect(dead_code)] // P3/P4: cache inspection API not yet exposed via CLI
+    #[expect(dead_code)] // exercised by tests; not yet exposed via CLI
     pub fn recent_scans(&self, limit: u32) -> anyhow::Result<Vec<ScanRecord>> {
         if !self.enabled {
             return Ok(vec![]);
@@ -322,7 +322,7 @@ impl ScanCache {
 
 /// Summary of a previously recorded scan from the cache.
 #[derive(Debug, Clone)]
-#[expect(dead_code)] // Public struct — fields used externally
+#[expect(dead_code)] // fields exercised by tests; not yet exposed via CLI
 pub struct ScanRecord {
     /// Unique scan identifier
     pub scan_id: String,
