@@ -46,25 +46,24 @@ impl ScoreWeights {
 // ─── Context for Scoring ──────────────────────────────────────────────────────
 
 /// Context needed to compute finding risk scores.
-#[derive(Debug, Clone)]
-pub struct ScoringContext<'a> {
-    pub chains: &'a [AttackChain],
+#[derive(Debug, Clone, Default)]
+pub struct ScoringContext {
     /// Precomputed finding-id -> number of chains containing it. Built once in
     /// `ScoringContext::new` so `dimension_chain` is O(1) per finding instead of
     /// scanning every chain's finding list (O(findings x chains x chain_size)).
     pub chain_counts: std::collections::HashMap<String, usize>,
 }
 
-impl<'a> ScoringContext<'a> {
+impl ScoringContext {
     /// Build a scoring context, precomputing chain-membership counts.
-    pub fn new(chains: &'a [AttackChain]) -> Self {
+    pub fn new(chains: &[AttackChain]) -> Self {
         let mut chain_counts = std::collections::HashMap::new();
         for chain in chains {
             for id in &chain.finding_ids {
                 *chain_counts.entry(id.clone()).or_insert(0) += 1;
             }
         }
-        Self { chains, chain_counts }
+        Self { chain_counts }
     }
 }
 
