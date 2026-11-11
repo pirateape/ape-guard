@@ -247,17 +247,18 @@ pub fn build_attack_chains(findings: &[CanonicalFinding]) -> Vec<AttackChain> {
     }
 
     // --- Strategy 4: ZT-pillar cross-cutting chains ---
-    // Group findings by zt_pillars — if 2+ findings affect 2+ pillars, build a ZT chain
+    // Group findings by zt_pillars — if 2+ findings affect 2+ pillars, build a ZT chain.
+    // The chained set is rebuilt only when a chain is actually emitted, not per group.
     let zt_groups = group_by_zt_pillars(findings);
+    let mut already_chained: HashSet<String> = chains
+        .iter()
+        .flat_map(|c| c.finding_ids.iter().cloned())
+        .collect();
     for (pillar_combo, group) in &zt_groups {
         if group.len() >= 2 && pillar_combo.split(',').count() >= 2 {
-            let already_chained: HashSet<&str> = chains
-                .iter()
-                .flat_map(|c| c.finding_ids.iter().map(|s| s.as_str()))
-                .collect();
             let fresh: Vec<&CanonicalFinding> = group
                 .iter()
-                .filter(|f| !already_chained.contains(f.id.as_str()))
+                .filter(|f| !already_chained.contains(&f.id))
                 .copied()
                 .collect();
             if fresh.len() >= 2 {
@@ -295,6 +296,9 @@ pub fn build_attack_chains(findings: &[CanonicalFinding]) -> Vec<AttackChain> {
                     finding_ids: fresh.iter().map(|f| f.id.clone()).collect(),
                     recommendation: "Multiple Zero Trust pillars affected — review the system-wide security posture.".into(),
                 });
+                for f in &fresh {
+                    already_chained.insert(f.id.clone());
+                }
             }
         }
     }
