@@ -163,7 +163,10 @@ impl ScanCache {
     pub fn stats(&self) -> anyhow::Result<CacheStats> {
         let scan_count: u64 = if self.enabled {
             self.conn
-                .query_row("SELECT COUNT(*) FROM scan_history", [], |row| row.get(0))
+                .query_row("SELECT COUNT(*) FROM scan_history", [], |row| {
+                    let n: i64 = row.get(0)?;
+                    Ok(n.max(0) as u64)
+                })
                 .unwrap_or(0)
         } else {
             0
@@ -174,7 +177,10 @@ impl ScanCache {
                 .query_row(
                     "SELECT COALESCE(SUM(total_findings), 0) FROM scan_history",
                     [],
-                    |row| row.get(0),
+                    |row| {
+                        let n: i64 = row.get(0)?;
+                        Ok(n.max(0) as u64)
+                    },
                 )
                 .unwrap_or(0)
         } else {
@@ -219,8 +225,10 @@ impl ScanCache {
             // Remove cache entries not referenced by recent scans (keep all for now — hard to
             // determine which files were scanned in which sessions without a join table)
             // For simplicity, just count what we removed from scan_history
-            self.conn
-                .query_row("SELECT changes()", [], |row| row.get::<_, u64>(0))?
+            self.conn.query_row("SELECT changes()", [], |row| {
+                let n: i64 = row.get(0)?;
+                Ok(n.max(0) as u64)
+            })?
         } else {
             // Fewer scans than keep threshold, nothing to prune
             0
@@ -246,9 +254,12 @@ impl ScanCache {
             "DELETE FROM scan_history WHERE started_at < ?1",
             params![cutoff.to_rfc3339()],
         )?;
-        let removed_history: u64 = self
-            .conn
-            .query_row("SELECT changes()", [], |row| row.get(0))?;
+        let removed_history: u64 = {
+            let n: i64 = self
+                .conn
+                .query_row("SELECT changes()", [], |row| row.get(0))?;
+            n.max(0) as u64
+        };
 
         let removed = removed_history;
 
