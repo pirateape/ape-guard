@@ -1,3 +1,16 @@
+---
+id: apeguard-adr-0001
+type: architecture-design
+title: ADR 0001 — Record architecture decisions
+status: draft
+parent: apeguard-architecture
+depends-on: []
+references: []
+implements: []
+covers: []
+tags: [adr]
+---
+
 # ADR 0001: Record architecture decisions
 
 ## Status

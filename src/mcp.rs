@@ -94,6 +94,11 @@ fn validate_mcp_web_target(url: &str) -> anyhow::Result<()> {
         host_port.split(':').next().unwrap_or(host_port)
     };
 
+    // Strip IPv6 zone ID (`fe80::1%25eth0` / `::1%eth0`) so address parsing works,
+    // and a trailing DNS dot (`localhost.` resolves to loopback too).
+    let host = host.split('%').next().unwrap_or(host);
+    let host = host.strip_suffix('.').unwrap_or(host);
+
     if host.is_empty() {
         anyhow::bail!("web target URL is missing host: {url}");
     }
@@ -111,18 +116,37 @@ fn validate_mcp_web_target(url: &str) -> anyhow::Result<()> {
         anyhow::bail!("refusing SSRF web target pointing to internal/loopback host: {host}");
     }
 
+    // inet_aton-style hostnames (`2130706433`, `0x7f000001`) resolve to IPv4
+    // addresses via getaddrinfo but are NOT valid IpAddr strings — reject them
+    // outright. Numeric-shaped hosts that DO parse as a valid IP (dotted quads)
+    // fall through to the normal IP blocklist checks below.
+    let looks_numeric = host.chars().all(|c| c.is_ascii_digit() || c == '.');
+    let parses_as_ip = host.parse::<std::net::IpAddr>().is_ok();
+    if (looks_numeric && !parses_as_ip) || host.to_ascii_lowercase().contains("0x") {
+        anyhow::bail!(
+            "refusing web target with numeric IP encoding (possible SSRF bypass): {host}"
+        );
+    }
+
     if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        let is_blocked_v4 = |v4: std::net::Ipv4Addr| {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_unspecified()
+                || v4.octets()[0] == 100 && (v4.octets()[1] & 0b1100_0000) == 64
+        };
         let is_blocked = match ip {
-            std::net::IpAddr::V4(v4) => {
-                v4.is_loopback()
-                    || v4.is_private()
-                    || v4.is_link_local()
-                    || v4.is_broadcast()
-                    || v4.is_unspecified()
-                    || v4.octets()[0] == 100 && (v4.octets()[1] & 0b1100_0000) == 64
-            }
+            std::net::IpAddr::V4(v4) => is_blocked_v4(v4),
             std::net::IpAddr::V6(v6) => {
-                v6.is_loopback() || v6.is_unspecified() || (v6.segments()[0] & 0xfe00) == 0xfc00
+                // IPv4-mapped IPv6 (::ffff:127.0.0.1) connects via the IPv4
+                // stack — apply the IPv4 checks to the embedded address.
+                if let Some(mapped) = v6.to_ipv4_mapped() {
+                    is_blocked_v4(mapped)
+                } else {
+                    v6.is_loopback() || v6.is_unspecified() || (v6.segments()[0] & 0xfe00) == 0xfc00
+                }
             }
         };
         if is_blocked {
@@ -1051,5 +1075,42 @@ mod tests {
         assert!(validate_mcp_web_target("http://10.0.0.1/admin").is_err());
         assert!(validate_mcp_web_target("http://192.168.1.1/").is_err());
         assert!(validate_mcp_web_target("http://[::1]:8000").is_err());
+    }
+
+    #[test]
+    fn test_validate_mcp_web_target_blocks_ssrf_bypasses() {
+        // Decimal-integer IP form (inet_aton semantics resolve via getaddrinfo)
+        assert!(
+            validate_mcp_web_target("http://2130706433/").is_err(),
+            "decimal IP encoding must be rejected"
+        );
+        // Hex IP encoding
+        assert!(
+            validate_mcp_web_target("http://0x7f000001/").is_err(),
+            "hex IP encoding must be rejected"
+        );
+        // IPv4-mapped IPv6 reaching IPv4 loopback
+        assert!(
+            validate_mcp_web_target("http://[::ffff:127.0.0.1]/").is_err(),
+            "IPv4-mapped IPv6 to loopback must be rejected"
+        );
+        assert!(
+            validate_mcp_web_target("http://[::ffff:10.0.0.1]/").is_err(),
+            "IPv4-mapped IPv6 to private range must be rejected"
+        );
+        // Trailing DNS dot
+        assert!(
+            validate_mcp_web_target("http://localhost./").is_err(),
+            "trailing dot must not bypass the localhost check"
+        );
+        // IPv6 zone ID
+        assert!(
+            validate_mcp_web_target("http://[::1%25eth0]/").is_err(),
+            "zone ID must not bypass the ::1 check"
+        );
+        // userinfo must not hide the real host
+        assert!(validate_mcp_web_target("http://user@127.0.0.1/").is_err());
+        // Legitimate public targets still allowed
+        assert!(validate_mcp_web_target("https://example.com.").is_ok());
     }
 }

@@ -646,10 +646,13 @@ pub fn generate_mermaid_diagram(
             RiskLevel::Medium => ":::medium",
             RiskLevel::Low => "",
         };
+        // Component names come from scanned repositories (headings, Mermaid
+        // labels) — untrusted. Escape before embedding so downstream HTML
+        // viewers of the diagram cannot be injected with markup.
         diagram.push_str(&format!(
             "    {}[\"<b>{}</b><br/>{} findings: {} critical, {} high\"]{}\n",
             sanitize_mermaid_id(&risk.component_name),
-            risk.component_name,
+            escape_label(&risk.component_name),
             risk.finding_count,
             risk.critical_count,
             risk.high_count,
@@ -682,6 +685,17 @@ fn sanitize_mermaid_id(name: &str) -> String {
     name.chars()
         .filter(|c| c.is_alphanumeric() || *c == '_')
         .collect()
+}
+
+/// Escape a component label for safe embedding in the generated diagram.
+/// Component names come from scanned repositories (headings, Mermaid labels)
+/// and are untrusted — raw `<`, `>`, `"`, `&` would allow markup injection
+/// when the diagram source is displayed in HTML viewers.
+fn escape_label(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 #[cfg(test)]

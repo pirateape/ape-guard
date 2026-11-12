@@ -1,3 +1,16 @@
+---
+id: apeguard-grade-engine
+type: architecture-design
+title: Adversarial Verification Grader design
+status: draft
+parent: apeguard-architecture
+depends-on: []
+references: [apeguard-grade]
+implements: []
+covers: []
+tags: [design-doc, grade-engine]
+---
+
 # Option C: Adversarial Verification Grader
 
 > Status: **Design Phase** | Priority: Medium | Depends on: found_findings.jsonl (done in Option A)

@@ -47,16 +47,41 @@ fn scanner_is(scanners: &'static [ScannerType]) -> impl Fn(&CanonicalFinding) ->
 
 // ---- Predicate helpers ----
 
-/// Keyword fallback: check if finding's rule_id or title contains any keyword (case-insensitive).
+/// Check whether `keyword` occurs in `text` bounded by non-alphanumeric
+/// characters (or string boundaries). Mirrors `normalize::keyword_match` so a
+/// bare `"key"` does not match `"monkey"`, `"rce"` does not match `"mercer"`.
+fn boundary_keyword_match(text: &str, keyword: &str) -> bool {
+    let keyword = keyword.trim();
+    if keyword.is_empty() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    let kw_len = keyword.len();
+    let mut search_from = 0;
+    while let Some(pos) = text[search_from..].find(keyword) {
+        let abs = search_from + pos;
+        let end = abs + kw_len;
+        let before_ok = abs == 0 || !bytes[abs - 1].is_ascii_alphanumeric();
+        let after_ok = end == bytes.len() || !bytes[end].is_ascii_alphanumeric();
+        if before_ok && after_ok {
+            return true;
+        }
+        search_from = abs + 1;
+    }
+    false
+}
+
+/// Keyword fallback: check if finding's rule_id or title contains any keyword (case-insensitive,
+/// word-boundary matched).
 /// Used for backward compatibility with findings that lack structured CWE/tags.
 fn keyword_fallback(keywords: &[&str]) -> impl Fn(&CanonicalFinding) -> bool {
     let owned: Vec<String> = keywords.iter().map(|k| k.to_lowercase()).collect();
     move |f: &CanonicalFinding| {
         let rule_lower = f.rule_id.to_lowercase();
         let title_lower = f.title.to_lowercase();
-        owned
-            .iter()
-            .any(|k| rule_lower.contains(k) || title_lower.contains(k))
+        owned.iter().any(|k| {
+            boundary_keyword_match(&rule_lower, k) || boundary_keyword_match(&title_lower, k)
+        })
     }
 }
 
@@ -222,17 +247,18 @@ pub fn build_attack_chains(findings: &[CanonicalFinding]) -> Vec<AttackChain> {
     }
 
     // --- Strategy 4: ZT-pillar cross-cutting chains ---
-    // Group findings by zt_pillars — if 2+ findings affect 2+ pillars, build a ZT chain
+    // Group findings by zt_pillars — if 2+ findings affect 2+ pillars, build a ZT chain.
+    // The chained set is rebuilt only when a chain is actually emitted, not per group.
     let zt_groups = group_by_zt_pillars(findings);
+    let mut already_chained: HashSet<String> = chains
+        .iter()
+        .flat_map(|c| c.finding_ids.iter().cloned())
+        .collect();
     for (pillar_combo, group) in &zt_groups {
         if group.len() >= 2 && pillar_combo.split(',').count() >= 2 {
-            let already_chained: HashSet<&str> = chains
-                .iter()
-                .flat_map(|c| c.finding_ids.iter().map(|s| s.as_str()))
-                .collect();
             let fresh: Vec<&CanonicalFinding> = group
                 .iter()
-                .filter(|f| !already_chained.contains(f.id.as_str()))
+                .filter(|f| !already_chained.contains(&f.id))
                 .copied()
                 .collect();
             if fresh.len() >= 2 {
@@ -270,6 +296,9 @@ pub fn build_attack_chains(findings: &[CanonicalFinding]) -> Vec<AttackChain> {
                     finding_ids: fresh.iter().map(|f| f.id.clone()).collect(),
                     recommendation: "Multiple Zero Trust pillars affected — review the system-wide security posture.".into(),
                 });
+                for f in &fresh {
+                    already_chained.insert(f.id.clone());
+                }
             }
         }
     }
@@ -283,29 +312,44 @@ fn evaluate_rules_on_group(group: &[&CanonicalFinding], chains: &mut Vec<AttackC
         return;
     }
 
-    for rule in CHAIN_RULES {
-        // For each predicate, check if at least one finding in the group matches
-        let all_match = rule
-            .predicates
-            .iter()
-            .all(|pred| group.iter().any(|f| pred(f)));
+    // Find all rules whose predicates all match somewhere in the group.
+    let mut matching: Vec<&ChainRule> = CHAIN_RULES
+        .iter()
+        .filter(|rule| {
+            rule.predicates
+                .iter()
+                .all(|pred| group.iter().any(|f| pred(f)))
+        })
+        .collect();
 
-        if !all_match {
-            continue;
-        }
+    // Some rules share identical predicate sets (Credential Compromise and
+    // Data Exfiltration; Supply Chain Attack and Infrastructure Escalation),
+    // so they fire on the same finding set. Emit only the highest-multiplier
+    // rule per distinct finding set to avoid duplicate chains that would
+    // double-count in reports and inflate per-finding risk scores.
+    matching.sort_by(|a, b| b.risk_multiplier.total_cmp(&a.risk_multiplier));
 
-        // Count how many findings match at least one predicate in this rule
-        let matched_findings: Vec<&&CanonicalFinding> = group
+    let mut emitted_sets: Vec<Vec<&str>> = Vec::new();
+
+    for rule in matching {
+        // Findings matching at least one predicate in this rule
+        let matched_owned: Vec<&CanonicalFinding> = group
             .iter()
             .filter(|f| rule.predicates.iter().any(|pred| pred(f)))
+            .copied()
             .collect();
 
-        if matched_findings.len() < rule.min_findings {
+        if matched_owned.len() < rule.min_findings {
             continue;
         }
 
-        // Convert matched_findings to owned vec
-        let matched_owned: Vec<&CanonicalFinding> = matched_findings.into_iter().copied().collect();
+        // Skip if an already-emitted chain in this group covers the same findings
+        let mut finding_set: Vec<&str> = matched_owned.iter().map(|f| f.id.as_str()).collect();
+        finding_set.sort_unstable();
+        if emitted_sets.contains(&finding_set) {
+            continue;
+        }
+        emitted_sets.push(finding_set);
 
         let risk_score = compute_chain_risk(&matched_owned, rule);
         let steps = build_chain_steps(&matched_owned);
@@ -564,11 +608,23 @@ mod tests {
         // But the existing tests were passing with the old engine... I should keep tests passing.
         // Let me add soft keyword fallbacks to the predicate functions.
         assert!(
-            chains
-                .iter()
-                .any(|c| c.description.contains("Credential")
-                    || c.description.contains("Compromise")),
-            "Should have a credential compromise chain"
+            chains.iter().any(|c| c.description.contains("Credential")
+                || c.description.contains("Compromise")
+                || c.description.contains("Data Exfiltration")),
+            "Should have a credential-compromise/exfiltration chain"
+        );
+
+        // Rules with identical predicate sets (Credential Compromise and Data
+        // Exfiltration) must not both fire on the same finding set.
+        let covering: Vec<_> = chains
+            .iter()
+            .filter(|c| c.finding_ids.contains(&"1".to_string()))
+            .collect();
+        assert_eq!(
+            covering.len(),
+            1,
+            "Exactly one chain should cover the credential+injection finding set, got: {:?}",
+            covering.iter().map(|c| &c.description).collect::<Vec<_>>()
         );
     }
 
@@ -829,8 +885,19 @@ mod tests {
             "Credential chain should fire with proper tags"
         );
         assert!(
-            chains.iter().any(|c| c.description.contains("Credential")),
-            "Should contain a credential chain"
+            chains.iter().any(|c| c.description.contains("Credential")
+                || c.description.contains("Data Exfiltration")),
+            "Should contain a credential/exfiltration chain"
+        );
+        // Identical-predicate rules must not both fire on the same finding set
+        let covering: Vec<_> = chains
+            .iter()
+            .filter(|c| c.finding_ids.contains(&"1".to_string()))
+            .collect();
+        assert_eq!(
+            covering.len(),
+            1,
+            "Duplicate chains for the same finding set"
         );
     }
 
@@ -933,10 +1000,21 @@ mod tests {
             !chains.is_empty(),
             "Should create chains from these findings"
         );
-        // Credential Compromise chain should fire (is_credential + is_injection)
+        // Credential Compromise / Data Exfiltration chain fires (is_credential + is_injection)
         assert!(
-            chains.iter().any(|c| c.description.contains("Credential")),
-            "Should contain a credential compromise chain"
+            chains.iter().any(|c| c.description.contains("Credential")
+                || c.description.contains("Data Exfiltration")),
+            "Should contain a credential/exfiltration chain"
+        );
+        // Identical-predicate rules must not both fire on the same finding set
+        let covering: Vec<_> = chains
+            .iter()
+            .filter(|c| c.finding_ids.contains(&"1".to_string()))
+            .collect();
+        assert_eq!(
+            covering.len(),
+            1,
+            "Duplicate chains for the same finding set"
         );
     }
 }

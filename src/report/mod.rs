@@ -624,18 +624,15 @@ pub fn generate_sarif_report(
 
     let rules: Vec<SarifRule> = rule_ids
         .iter()
-        .map(|id| {
-            let f = findings
-                .iter()
-                .find(|f| f.rule_id == *id)
-                .expect("deduplicated rule_ids must match a finding in the set");
+        .filter_map(|id| {
+            let f = findings.iter().find(|f| f.rule_id == *id)?;
             let severity_str = format!("{:?}", f.severity);
             let level = match f.severity {
                 crate::find::Severity::Critical | crate::find::Severity::High => "error",
                 crate::find::Severity::Medium => "warning",
                 crate::find::Severity::Low | crate::find::Severity::Info => "note",
             };
-            SarifRule {
+            Some(SarifRule {
                 id: format!(
                     "apeguard/{}/{}",
                     format!("{:?}", f.scanner).to_lowercase(),
@@ -654,7 +651,7 @@ pub fn generate_sarif_report(
                     "scanner": format!("{:?}", f.scanner),
                     "zt_pillars": f.zt_pillars,
                 })),
-            }
+            })
         })
         .collect();
 
@@ -964,7 +961,7 @@ const HTML_TEMPLATE: &str = r##"<!DOCTYPE html>
 
   {% if arch_diagram %}
   <h2>Architecture Risk Diagram</h2>
-  <div class="arch-diagram"><pre>{{ arch_diagram | safe }}</pre></div>
+  <div class="arch-diagram"><pre>{{ arch_diagram }}</pre></div>
   {% endif %}
 
   {% if has_stride %}
@@ -1611,7 +1608,8 @@ mod tests {
 
         let content =
             std::fs::read_to_string(path).expect("report test: failed to read output file");
-        assert!(content.contains("graph TD; A-->B;"));
+        // Tera autoescape escapes the `>` in `-->` (correct behavior)
+        assert!(content.contains("graph TD; A--&gt;B;"));
         assert!(content.contains("Architecture Risk Diagram"));
     }
 
@@ -1658,11 +1656,298 @@ mod tests {
     }
 
     #[test]
+    fn test_html_report_escapes_untrusted_finding_fields() {
+        // Finding fields and the architecture diagram come from scanned
+        // repositories (untrusted). They must be HTML-escaped in the report.
+        let (mut summary, scorecard, mut findings) = create_test_context();
+        summary.scan_id = "xss-test".to_string();
+        findings[0].title = "<script>alert('title')</script>".to_string();
+        findings[0].description = "<img src=x onerror=alert('desc')>".to_string();
+
+        let malicious_diagram = "<img src=x onerror=alert('diag')>\ngraph TD; A-->B;";
+
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let path = generate_html_report(
+            &summary,
+            &findings,
+            &scorecard,
+            output_dir,
+            Some(malicious_diagram),
+            None,
+            None,
+        )
+        .expect("Failed to generate HTML report");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+
+        // Raw payloads must NOT appear anywhere in the HTML
+        assert!(
+            !content.contains("<script>alert"),
+            "unescaped <script> found in HTML report — stored XSS"
+        );
+        assert!(
+            !content.contains("<img src=x"),
+            "unescaped <img> found in HTML report — stored XSS"
+        );
+
+        // Escaped forms must appear instead
+        assert!(
+            content.contains("&lt;script&gt;"),
+            "finding title should be HTML-escaped"
+        );
+        assert!(
+            content.contains("&lt;img"),
+            "arch diagram should be HTML-escaped (no `| safe` bypass)"
+        );
+    }
+
+    #[test]
+    fn test_debug_diagram_output() {
+        let (summary, scorecard, findings) = create_test_context();
+        let tmp = tempfile::tempdir().expect("tmp");
+        let path = generate_html_report(
+            &summary,
+            &findings,
+            &scorecard,
+            tmp.path(),
+            Some("graph TD; A-->B;"),
+            None,
+            None,
+        )
+        .expect("gen");
+        let content = std::fs::read_to_string(&path).expect("read");
+        for line in content.lines() {
+            if line.contains("graph") || line.contains("arch-diagram") {
+                println!("LINE: {}", line);
+            }
+        }
+    }
+
+    #[test]
     fn test_html_template_has_expected_sections() {
         assert!(HTML_TEMPLATE.contains("ApeGuard Security Report"));
         assert!(HTML_TEMPLATE.contains("Zero Trust Scorecard"));
         assert!(HTML_TEMPLATE.contains("Architecture Risk Diagram"));
         assert!(HTML_TEMPLATE.contains("Findings ({{ total_findings }})"));
         assert!(HTML_TEMPLATE.contains("severity-badge"));
+    }
+
+    #[test]
+    fn test_generate_report_technical_empty_findings() {
+        let (summary, scorecard, _findings) = create_test_context();
+        let empty_summary = ScanSummary {
+            scan_id: "empty-tech".to_string(),
+            total_findings: 0,
+            findings_by_severity: FindingsBySeverity {
+                critical: 0,
+                high: 0,
+                medium: 0,
+                low: 0,
+                info: 0,
+            },
+            ..summary
+        };
+        let empty_findings: Vec<CanonicalFinding> = vec![];
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let path = generate_report(
+            &ReportType::Technical,
+            &empty_summary,
+            &empty_findings,
+            &scorecard,
+            output_dir,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to generate technical report with empty findings");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("ApeGuard Technical Report"));
+        assert!(content.contains("Total Findings"));
+        assert!(content.contains("| 0 |"));
+    }
+
+    #[test]
+    fn test_generate_report_executive_empty_findings() {
+        let (summary, scorecard, _findings) = create_test_context();
+        let empty_summary = ScanSummary {
+            scan_id: "empty-exec".to_string(),
+            total_findings: 0,
+            findings_by_severity: FindingsBySeverity {
+                critical: 0,
+                high: 0,
+                medium: 0,
+                low: 0,
+                info: 0,
+            },
+            ..summary
+        };
+        let empty_findings: Vec<CanonicalFinding> = vec![];
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let path = generate_report(
+            &ReportType::Executive,
+            &empty_summary,
+            &empty_findings,
+            &scorecard,
+            output_dir,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to generate executive report with empty findings");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("ApeGuard Executive Security Report"));
+        assert!(content.contains("0 findings across"));
+    }
+
+    #[test]
+    fn test_generate_report_roadmap_empty_findings() {
+        let (summary, scorecard, _findings) = create_test_context();
+        let empty_summary = ScanSummary {
+            scan_id: "empty-roadmap".to_string(),
+            total_findings: 0,
+            findings_by_severity: FindingsBySeverity {
+                critical: 0,
+                high: 0,
+                medium: 0,
+                low: 0,
+                info: 0,
+            },
+            ..summary
+        };
+        let empty_findings: Vec<CanonicalFinding> = vec![];
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let path = generate_report(
+            &ReportType::Roadmap,
+            &empty_summary,
+            &empty_findings,
+            &scorecard,
+            output_dir,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to generate roadmap report with empty findings");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("ApeGuard Remediation Roadmap"));
+        assert!(content.contains("*No critical findings.*"));
+        assert!(content.contains("*No high-severity findings.*"));
+    }
+
+    #[test]
+    fn test_generate_report_no_zt_scorecard() {
+        let (summary, _scorecard, findings) = create_test_context();
+        let no_scorecard_summary = ScanSummary {
+            zt_scorecard: None,
+            ..summary
+        };
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let path = generate_report(
+            &ReportType::Technical,
+            &no_scorecard_summary,
+            &findings,
+            &ZeroTrustScorecard {
+                overall_score: 0,
+                max_score: 0,
+                pillars: vec![],
+                pillars_at_advanced_or_higher: 0,
+                target_maturity: MaturityTier::Baseline,
+                classification: PostureClassification::Initial,
+                gap_analysis: vec![],
+            },
+            output_dir,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to generate technical report without zt scorecard");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("Hardcoded Secret"));
+    }
+
+    #[test]
+    fn test_generate_report_with_stride_result() {
+        let (summary, scorecard, findings) = create_test_context();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let stride_result = crate::stride::StrideResult {
+            coverage: vec![],
+            total_findings: findings.len(),
+            covered_categories: 0,
+            coverage_score: 0.0,
+            gaps: vec![],
+            threshold: 0.05,
+        };
+
+        let path = generate_report(
+            &ReportType::Technical,
+            &summary,
+            &findings,
+            &scorecard,
+            output_dir,
+            None,
+            Some(&stride_result),
+            None,
+        )
+        .expect("Failed to generate technical report with stride result");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("Hardcoded Secret"));
+    }
+
+    #[test]
+    fn test_generate_report_with_policy_result() {
+        let (summary, scorecard, findings) = create_test_context();
+        let tmp = tempfile::tempdir().expect("failed to create temp dir for report test");
+        let output_dir = tmp.path();
+
+        let policy_result = crate::policy::PolicyResult {
+            enabled: true,
+            policies_loaded: 1,
+            policy_files: vec!["test-policy".to_string()],
+            actions_applied: vec![],
+            blocked_count: 0,
+            escalated_count: 0,
+            downgraded_count: 0,
+            flagged_count: 0,
+            tagged_count: 0,
+            errors: vec![],
+        };
+
+        let path = generate_report(
+            &ReportType::Technical,
+            &summary,
+            &findings,
+            &scorecard,
+            output_dir,
+            None,
+            None,
+            Some(&policy_result),
+        )
+        .expect("Failed to generate technical report with policy result");
+
+        let content =
+            std::fs::read_to_string(path).expect("report test: failed to read output file");
+        assert!(content.contains("Hardcoded Secret"));
     }
 }

@@ -24,6 +24,9 @@ pub struct ReachabilityResult {
     pub enabled: bool,
     /// Set of file paths found to be transitively reachable from entry points
     pub reachable_files: HashSet<PathBuf>,
+    /// Canonical set of every file that was part of the import graph — used to
+    /// distinguish "analyzed but unreachable" from "never analyzed"
+    pub analyzed_files: HashSet<PathBuf>,
     /// All entry points discovered and used for the analysis
     pub entry_points: Vec<PathBuf>,
     /// Number of files in the import graph
@@ -579,16 +582,148 @@ fn resolve_js_path(path_str: &str, parent: &Path, _target_root: &Path, imports: 
 }
 
 /// Go imports: `import "path"`, `import ("path1"\n"path2")`
+///
+/// Resolves local imports (those under the module's own go.mod path) to
+/// `.go` files. External imports (github.com/..., golang.org/..., stdlib)
+/// are skipped.
 fn extract_go_imports(
-    _content: &str,
-    _parent: &Path,
-    _target_root: &Path,
-    _imports: &mut Vec<PathBuf>,
+    content: &str,
+    parent: &Path,
+    target_root: &Path,
+    imports: &mut Vec<PathBuf>,
 ) {
-    // Go uses full module paths (e.g., "github.com/user/repo/pkg"),
-    // not relative file paths. Local imports use the module name.
-    // For V1, we skip Go import resolution (too complex without AST).
-    // Entry points are still discovered via main.go — just no import following.
+    // Read go.mod to get the module path
+    let module_path = match read_go_mod_module_path(target_root) {
+        Some(mp) => mp,
+        None => return, // No go.mod = can't resolve local imports
+    };
+
+    // Parse import statements (both single and parenthesized blocks)
+    let import_strings = parse_go_imports(content);
+
+    for import_path in import_strings {
+        // Skip stdlib and external imports
+        if import_path.starts_with(".")
+            || import_path.contains("://")
+            || import_path.starts_with('/')
+        {
+            continue;
+        }
+
+        // Check if this is a local import under our module path
+        let relative = if let Some(rest) = import_path.strip_prefix(&module_path) {
+            rest.trim_start_matches('/')
+        } else if import_path == module_path {
+            "" // Import of the module root itself
+        } else {
+            continue; // External dependency
+        };
+
+        // Resolve to a .go file
+        let go_path = parent.join(relative);
+        if go_path.extension().is_none() {
+            // Try directory with .go files (package directory)
+            if go_path.is_dir() {
+                // Look for any .go file in the directory (package entry)
+                if let Ok(entries) = std::fs::read_dir(&go_path) {
+                    for entry in entries.flatten() {
+                        if entry.path().extension().and_then(|e| e.to_str()) == Some("go") {
+                            imports.push(canonicalize_path(&entry.path()));
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+            // Try as {relative}.go or {relative}/index.go or {relative}/mod.go
+            let with_go = go_path.with_extension("go");
+            if with_go.exists() {
+                imports.push(canonicalize_path(&with_go));
+            } else {
+                let index_go = go_path.join("index.go");
+                if index_go.exists() {
+                    imports.push(canonicalize_path(&index_go));
+                } else {
+                    let mod_go = go_path.join("mod.go");
+                    if mod_go.exists() {
+                        imports.push(canonicalize_path(&mod_go));
+                    }
+                }
+            }
+        } else {
+            // Already has .go extension
+            if go_path.exists() {
+                imports.push(canonicalize_path(&go_path));
+            }
+        }
+    }
+}
+
+/// Read the module path from go.mod
+fn read_go_mod_module_path(target_root: &Path) -> Option<String> {
+    let go_mod_path = target_root.join("go.mod");
+    let content = std::fs::read_to_string(&go_mod_path).ok()?;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("module ") {
+            let module_path = rest.trim().trim_matches('"').trim_matches('\'');
+            if !module_path.is_empty() {
+                return Some(module_path.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Parse Go import statements from source content.
+/// Handles both single imports (`import "path"`) and parenthesized blocks.
+fn parse_go_imports(content: &str) -> Vec<String> {
+    let mut imports = Vec::new();
+    let mut in_block = false;
+    let mut block_depth = 0usize;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Skip comments
+        if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+            continue;
+        }
+
+        if !in_block {
+            // Look for import statements
+            if let Some(rest) = trimmed.strip_prefix("import ") {
+                let rest = rest.trim();
+                if rest.starts_with('"') {
+                    // Single import: import "path"
+                    if let Some(path) = extract_quoted_string(rest) {
+                        imports.push(path);
+                    }
+                } else if rest == "(" {
+                    // Parenthesized import block: import (\n ... \n)
+                    in_block = true;
+                    block_depth = 1;
+                }
+            }
+        } else {
+            // Inside an import block
+            if trimmed == "(" {
+                block_depth += 1;
+            } else if trimmed == ")" {
+                block_depth -= 1;
+                if block_depth == 0 {
+                    in_block = false;
+                }
+            } else if !trimmed.is_empty() && !trimmed.starts_with("//") {
+                // Import line inside block
+                if let Some(path) = extract_quoted_string(trimmed) {
+                    imports.push(path);
+                }
+            }
+        }
+    }
+
+    imports
 }
 
 /// C/C++ includes: `#include "header.h"` (relative includes only)
@@ -649,14 +784,18 @@ fn build_import_graph(
         for import in &imports {
             if let Some(rc_import) = path_to_rc.get(import.as_path()) {
                 // rc_import is &&Rc<PathBuf>; *rc_import gives &Rc<PathBuf>
-                graph
-                    .get_mut(file)
-                    .expect("file must be pre-populated in graph")
-                    .push(Rc::clone(*rc_import));
-                reverse
-                    .get_mut(*rc_import)
-                    .expect("import must be pre-populated in reverse graph")
-                    .push(Rc::clone(file));
+                // Both graphs are pre-populated with all files, so these should
+                // always succeed. Handle gracefully if they don't.
+                let Some(file_entry) = graph.get_mut(file) else {
+                    tracing::warn!("file not pre-populated in graph: {:?}", file);
+                    continue;
+                };
+                let Some(reverse_entry) = reverse.get_mut(*rc_import) else {
+                    tracing::warn!("import not pre-populated in reverse graph: {:?}", import);
+                    continue;
+                };
+                file_entry.push(Rc::clone(*rc_import));
+                reverse_entry.push(Rc::clone(file));
                 total_imports += 1;
             }
         }
@@ -717,6 +856,7 @@ pub fn analyze_reachability(
         return ReachabilityResult {
             enabled: false,
             reachable_files: HashSet::new(),
+            analyzed_files: HashSet::new(),
             entry_points: vec![],
             total_files_analyzed: 0,
             total_imports: 0,
@@ -748,6 +888,7 @@ pub fn analyze_reachability(
         return ReachabilityResult {
             enabled: true,
             reachable_files: HashSet::new(),
+            analyzed_files: all_files.iter().map(|p| canonicalize_path(p)).collect(),
             entry_points,
             total_files_analyzed: all_files.len(),
             total_imports: 0,
@@ -776,9 +917,15 @@ pub fn analyze_reachability(
         .map(|p| canonicalize_path(p))
         .collect();
 
+    // Canonical set of every file that was part of the import graph. Needed by
+    // apply_reachability to distinguish "analyzed but unreachable" (dead code)
+    // from "never analyzed" (.env, Dockerfile, lockfiles — reachability unknown).
+    let analyzed_files: HashSet<PathBuf> = all_files.iter().map(|p| canonicalize_path(p)).collect();
+
     ReachabilityResult {
         enabled: true,
         reachable_files: reachable_canon,
+        analyzed_files,
         entry_points,
         total_files_analyzed: all_files.len(),
         total_imports,
@@ -789,8 +936,20 @@ pub fn analyze_reachability(
 }
 
 /// Apply reachability results to a mutable findings list.
-/// Sets `finding.reachable = Some(true/false)` based on file path membership.
-pub fn apply_reachability(findings: &mut [CanonicalFinding], result: &ReachabilityResult) {
+///
+/// `finding.reachable` is set to:
+/// - `Some(true)` when the finding's file is transitively reachable from an entry point,
+/// - `Some(false)` when the file was part of the import graph but is NOT reachable (dead code),
+/// - `None` when the file was never part of the analysis (.env, Dockerfile, lockfiles, …) —
+///   reachability is unknown and must not be read as "unreachable".
+///
+/// Finding paths may be relative to the scan target (e.g. Gitleaks reports paths
+/// relative to `--source`), so each path is resolved against both CWD and `target`.
+pub fn apply_reachability(
+    findings: &mut [CanonicalFinding],
+    result: &ReachabilityResult,
+    target: &Path,
+) {
     let mut reachable_count = 0usize;
     let mut unreachable_count = 0usize;
     let mut unknown_count = 0usize;
@@ -806,19 +965,28 @@ pub fn apply_reachability(findings: &mut [CanonicalFinding], result: &Reachabili
             continue;
         }
 
-        let canonical = canonicalize_path(file_path);
+        // Candidate resolutions: relative paths may be CWD-relative or target-relative
+        let mut candidates: Vec<PathBuf> = vec![canonicalize_path(file_path)];
+        if file_path.is_relative() {
+            candidates.push(canonicalize_path(&target.join(file_path)));
+        }
 
-        if result.reachable_files.contains(&canonical) {
+        let is_reachable = candidates
+            .iter()
+            .any(|c| result.reachable_files.contains(c));
+        let is_analyzed = candidates.iter().any(|c| result.analyzed_files.contains(c));
+
+        if is_reachable {
             finding.reachable = Some(true);
             reachable_count += 1;
-        } else if result.reachable_files.is_empty() && result.total_files_analyzed == 0 {
-            // Analysis was not run — leave as None
-            finding.reachable = None;
-            unknown_count += 1;
-        } else {
-            // File exists in the graph but is not reachable
+        } else if is_analyzed {
+            // File was in the import graph but not reachable — dead code
             finding.reachable = Some(false);
             unreachable_count += 1;
+        } else {
+            // File was never part of the analysis — reachability unknown
+            finding.reachable = None;
+            unknown_count += 1;
         }
     }
 
@@ -1188,6 +1356,7 @@ mod tests {
         let reachable_file = write_file(tmp.path(), "src/main.rs", "fn main() {}");
         let unreachable_file = write_file(tmp.path(), "src/dead.rs", "fn dead() {}");
         let reachable_canon = canonicalize_path(&reachable_file);
+        let unreachable_canon = canonicalize_path(&unreachable_file);
 
         let mut findings = vec![
             CanonicalFinding {
@@ -1229,9 +1398,13 @@ mod tests {
         ];
 
         let reachable_set: HashSet<PathBuf> = [reachable_canon.clone()].into();
+        let analyzed_set: HashSet<PathBuf> = [reachable_canon.clone(), unreachable_canon.clone()]
+            .into_iter()
+            .collect();
         let result = ReachabilityResult {
             enabled: true,
             reachable_files: reachable_set,
+            analyzed_files: analyzed_set,
             entry_points: vec![reachable_canon.clone()],
             total_files_analyzed: 2,
             total_imports: 0,
@@ -1240,11 +1413,90 @@ mod tests {
             findings_unknown: 3, // Before apply
         };
 
-        apply_reachability(&mut findings, &result);
+        apply_reachability(&mut findings, &result, tmp.path());
 
         assert_eq!(findings[0].reachable, Some(true));
         assert_eq!(findings[1].reachable, Some(false));
         assert_eq!(findings[2].reachable, None); // "." — no meaningful path
+    }
+
+    #[test]
+    fn test_apply_reachability_never_analyzed_file_is_unknown() {
+        // A file that was never part of the import graph (.env, Dockerfile, …)
+        // must NOT be marked unreachable — reachability is unknown.
+        let tmp = create_temp_dir();
+        let main_file = write_file(tmp.path(), "src/main.rs", "fn main() {}");
+        let main_canon = canonicalize_path(&main_file);
+
+        let mut findings = vec![CanonicalFinding {
+            id: "F-ENV".into(),
+            location: crate::find::FindingLocation {
+                file: PathBuf::from(".env"),
+                line: Some(1),
+                column: None,
+                commit: None,
+                author: None,
+                snippet: None,
+            },
+            ..create_minimal_finding()
+        }];
+
+        let result = ReachabilityResult {
+            enabled: true,
+            reachable_files: [main_canon.clone()].into_iter().collect(),
+            analyzed_files: [main_canon].into_iter().collect(),
+            entry_points: vec![],
+            total_files_analyzed: 1,
+            total_imports: 0,
+            findings_reachable: 0,
+            findings_unreachable: 0,
+            findings_unknown: 1,
+        };
+
+        apply_reachability(&mut findings, &result, tmp.path());
+        assert_eq!(
+            findings[0].reachable, None,
+            ".env was never analyzed — reachable must stay None, not Some(false)"
+        );
+    }
+
+    #[test]
+    fn test_apply_reachability_target_relative_paths() {
+        // Gitleaks reports paths relative to the scan target. When the target
+        // is not the CWD, relative finding paths must resolve against the target.
+        let tmp = create_temp_dir();
+        let main_file = write_file(tmp.path(), "src/main.rs", "fn main() {}");
+        let main_canon = canonicalize_path(&main_file);
+
+        // Finding with a target-relative path (what Gitleaks emits)
+        let mut findings = vec![CanonicalFinding {
+            id: "F-GL".into(),
+            location: crate::find::FindingLocation {
+                file: PathBuf::from("src/main.rs"),
+                line: Some(1),
+                column: None,
+                commit: None,
+                author: None,
+                snippet: None,
+            },
+            ..create_minimal_finding()
+        }];
+
+        let result = ReachabilityResult {
+            enabled: true,
+            reachable_files: [main_canon].into_iter().collect(),
+            analyzed_files: HashSet::new(),
+            entry_points: vec![],
+            total_files_analyzed: 1,
+            total_imports: 0,
+            findings_reachable: 0,
+            findings_unreachable: 0,
+            findings_unknown: 1,
+        };
+
+        // tmp.path() differs from CWD — resolution must go through target
+        apply_reachability(&mut findings, &result, tmp.path());
+        assert_eq!(findings[0].reachable, Some(true));
     }
 
     /// Helper to create a minimal CanonicalFinding for testing
@@ -1355,6 +1607,160 @@ mod tests {
                 .iter()
                 .any(|p| p.to_string_lossy().ends_with("Button.tsx")),
             "Should resolve TSX imports"
+        );
+    }
+
+    #[test]
+    fn test_read_go_mod_module_path() {
+        let tmp = create_temp_dir();
+        write_file(
+            tmp.path(),
+            "go.mod",
+            "module github.com/example/myapp\n\ngo 1.21\n",
+        );
+        let module_path = read_go_mod_module_path(tmp.path());
+        assert_eq!(module_path, Some("github.com/example/myapp".to_string()));
+    }
+
+    #[test]
+    fn test_read_go_mod_module_path_no_file() {
+        let tmp = create_temp_dir();
+        let module_path = read_go_mod_module_path(tmp.path());
+        assert_eq!(module_path, None);
+    }
+
+    #[test]
+    fn test_parse_go_imports_single() {
+        let content = r#"
+package main
+
+import "fmt"
+import "github.com/example/myapp/pkg/utils"
+
+func main() {}
+"#;
+        let imports = parse_go_imports(content);
+        assert_eq!(imports.len(), 2);
+        assert!(imports.contains(&"fmt".to_string()));
+        assert!(imports.contains(&"github.com/example/myapp/pkg/utils".to_string()));
+    }
+
+    #[test]
+    fn test_parse_go_imports_block() {
+        let content = r#"
+package main
+
+import (
+    "fmt"
+    "os"
+    "github.com/example/myapp/internal/config"
+)
+
+func main() {}
+"#;
+        let imports = parse_go_imports(content);
+        assert_eq!(imports.len(), 3);
+        assert!(imports.contains(&"fmt".to_string()));
+        assert!(imports.contains(&"os".to_string()));
+        assert!(imports.contains(&"github.com/example/myapp/internal/config".to_string()));
+    }
+
+    #[test]
+    fn test_parse_go_imports_mixed() {
+        let content = r#"
+package main
+
+import "fmt"
+
+import (
+    "os"
+)
+
+import "github.com/example/myapp/pkg/utils"
+"#;
+        let imports = parse_go_imports(content);
+        assert_eq!(imports.len(), 3);
+    }
+
+    #[test]
+    fn test_extract_go_imports_local() {
+        let tmp = create_temp_dir();
+
+        // Create go.mod
+        write_file(
+            tmp.path(),
+            "go.mod",
+            "module github.com/example/myapp\n\ngo 1.21\n",
+        );
+
+        // Create a local package
+        write_file(
+            tmp.path(),
+            "pkg/utils/helpers.go",
+            "package helpers\n\nfunc Helper() {}",
+        );
+
+        // Create main.go that imports the local package
+        let main_go = write_file(
+            tmp.path(),
+            "main.go",
+            r#"
+package main
+
+import (
+    "fmt"
+    "github.com/example/myapp/pkg/utils/helpers"
+)
+
+func main() {
+    fmt.Println("hello")
+    helpers.Helper()
+}
+"#,
+        );
+
+        let imports = extract_imports(&main_go, tmp.path());
+        assert!(
+            imports
+                .iter()
+                .any(|p| p.to_string_lossy().ends_with("helpers.go")),
+            "Should resolve local Go import, got: {:?}",
+            imports
+        );
+    }
+
+    #[test]
+    fn test_extract_go_imports_external_skipped() {
+        let tmp = create_temp_dir();
+
+        write_file(
+            tmp.path(),
+            "go.mod",
+            "module github.com/example/myapp\n\ngo 1.21\n",
+        );
+
+        let main_go = write_file(
+            tmp.path(),
+            "main.go",
+            r#"
+package main
+
+import (
+    "fmt"
+    "os"
+    "github.com/some/external/dep"
+)
+
+func main() {}
+"#,
+        );
+
+        let imports = extract_imports(&main_go, tmp.path());
+        // External imports (fmt, os, github.com/some/external/dep) should be skipped
+        assert!(
+            imports.is_empty(),
+            "External imports should be skipped, got: {:?}",
+            imports
         );
     }
 }

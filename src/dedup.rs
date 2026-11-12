@@ -12,23 +12,17 @@ pub fn deduplicate(findings: Vec<CanonicalFinding>) -> Vec<CanonicalFinding> {
     let mut deduped = Vec::new();
 
     for finding in findings {
-        match finding.location.line {
-            Some(line) => {
-                let key = (
-                    finding.location.file.to_string_lossy().to_string(),
-                    Some(line),
-                    finding.rule_id.clone(),
-                );
-                if seen.insert(key) {
-                    deduped.push(finding);
-                }
-                // Skip only exact duplicates: same file + same line + same rule
-            }
-            None => {
-                // No line info = always keep (can't confirm duplicate location)
-                deduped.push(finding);
-            }
+        let key = (
+            finding.location.file.to_string_lossy().to_string(),
+            finding.location.line,
+            finding.rule_id.clone(),
+        );
+        if seen.insert(key) {
+            deduped.push(finding);
         }
+        // With a line number: skip only exact duplicates (same file + line + rule).
+        // Without a line number (e.g. Trivy vulnerability findings): the same
+        // file + same rule IS confirmably the same finding, so dedup applies too.
     }
 
     deduped
@@ -157,14 +151,29 @@ mod tests {
     }
 
     #[test]
-    fn test_dedup_no_line_number() {
+    fn test_dedup_no_line_number_same_rule_deduped() {
+        // Same file + same rule with no line info = same finding (e.g. the same
+        // CVE reported twice for the same lockfile target) → deduplicated.
         let findings = vec![
             make_finding("a", "file.py", None, ScannerType::Gitleaks),
             make_finding("b", "file.py", None, ScannerType::Semgrep),
         ];
 
         let deduped = deduplicate(findings);
-        assert_eq!(deduped.len(), 2); // both kept if None
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].id, "a");
+    }
+
+    #[test]
+    fn test_dedup_no_line_number_different_rules_kept() {
+        // Same file, no line, but DIFFERENT rules = genuinely different findings
+        let mut f1 = make_finding("a", "file.py", None, ScannerType::Gitleaks);
+        f1.rule_id = "rule-1".to_string();
+        let mut f2 = make_finding("b", "file.py", None, ScannerType::Semgrep);
+        f2.rule_id = "rule-2".to_string();
+
+        let deduped = deduplicate(vec![f1, f2]);
+        assert_eq!(deduped.len(), 2);
     }
 
     #[test]
