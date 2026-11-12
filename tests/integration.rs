@@ -298,9 +298,12 @@ fn test_resume_reloads_findings_from_previous_run() {
     );
     let jsonl = std::fs::read_to_string(&jsonl_path).unwrap();
     let has_complete = jsonl.contains("\"status\":\"complete\"");
+    // CI runners may report "skipped" (binary absent) or "error" (binary
+    // present but failing) — both are valid per-scanner outcomes.
     let has_skipped = jsonl.contains("\"status\":\"skipped\"");
+    let has_error = jsonl.contains("\"status\":\"error\"");
     assert!(
-        has_complete || has_skipped,
+        has_complete || has_skipped || has_error,
         "JSONL should contain scanner status lines, got: {jsonl}"
     );
 
