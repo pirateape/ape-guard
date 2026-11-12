@@ -288,63 +288,70 @@ fn test_resume_reloads_findings_from_previous_run() {
     .assert()
     .success();
 
-    // The JSONL must contain finding lines (persisted for resume)
+    // The JSONL must contain a status line per scanner — "complete" when the
+    // scanner ran, "skipped" when its binary isn't installed (e.g. CI runners
+    // without gitleaks). Either way the resume machinery has something to read.
     let jsonl_path = output_dir.join("found_findings.jsonl");
     assert!(
         jsonl_path.exists(),
         "found_findings.jsonl should exist after a scan"
     );
     let jsonl = std::fs::read_to_string(&jsonl_path).unwrap();
+    let has_complete = jsonl.contains("\"status\":\"complete\"");
+    let has_skipped = jsonl.contains("\"status\":\"skipped\"");
     assert!(
-        jsonl.contains("\"status\":\"complete\"") || jsonl.contains("\"status\": \"complete\""),
-        "JSONL should contain a complete status line"
+        has_complete || has_skipped,
+        "JSONL should contain scanner status lines, got: {jsonl}"
     );
 
-    // Count finding lines in run 1
+    // Count finding lines in run 1. Nonzero only on machines where a layer-1
+    // scanner (gitleaks/trufflehog) is actually installed and detects the token.
     let finding_lines_run1 = jsonl
         .lines()
         .filter(|l| l.contains("\"status\":\"finding\"") || l.contains("\"status\": \"finding\""))
         .count();
-    assert!(
-        finding_lines_run1 > 0,
-        "JSONL should persist findings — gitleaks must detect the seeded token"
+
+    // Run 2: resume with all layers already complete. When run 1 produced
+    // findings, the report must NOT be empty — resume reloads persisted
+    // results. (On CI with no scanners installed the reload path is still
+    // exercised; the finding-count equality is vacuously 0 == 0.)
+    let json_report = output_dir.join("apeguard-report.json");
+    let before: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json_report).expect("run-1 JSON report"))
+            .expect("run-1 JSON should parse");
+
+    let mut cmd = Command::cargo_bin(BINARY).unwrap();
+    cmd.args([
+        "scan",
+        &target,
+        "--layers",
+        "1",
+        "--resume",
+        "--no-cache",
+        "--format",
+        "md,json",
+        "--output-dir",
+        &output_dir_str,
+    ])
+    .assert()
+    .success();
+
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json_report).expect("resumed JSON report"))
+            .expect("resumed JSON should parse");
+
+    assert_eq!(
+        before["findings"].as_array().map(|a| a.len()),
+        after["findings"].as_array().map(|a| a.len()),
+        "resumed scan must reload the same findings as the original run \
+         (empty reports on full resume were the pre-fix bug)"
     );
-
-    // Run 2: resume with all layers already complete. The report must NOT be
-    // empty when run 1 produced findings — resume reloads persisted results.
-    if finding_lines_run1 > 0 {
-        let json_report = output_dir.join("apeguard-report.json");
-        let before: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(&json_report).expect("run-1 JSON report"),
-        )
-        .expect("run-1 JSON should parse");
-
-        let mut cmd = Command::cargo_bin(BINARY).unwrap();
-        cmd.args([
-            "scan",
-            &target,
-            "--layers",
-            "1",
-            "--resume",
-            "--no-cache",
-            "--format",
-            "md,json",
-            "--output-dir",
-            &output_dir_str,
-        ])
-        .assert()
-        .success();
-
-        let after: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(&json_report).expect("resumed JSON report"),
-        )
-        .expect("resumed JSON should parse");
-
-        assert_eq!(
-            before["findings"].as_array().map(|a| a.len()),
-            after["findings"].as_array().map(|a| a.len()),
-            "resumed scan must reload the same findings as the original run \
-             (empty reports on full resume were the pre-fix bug)"
+    if has_complete {
+        // At least one scanner actually ran — the JSONL must have persisted its
+        // findings so the resumed scan could reload them.
+        assert!(
+            finding_lines_run1 > 0,
+            "a completed scanner must persist finding lines for resume"
         );
     }
 }
