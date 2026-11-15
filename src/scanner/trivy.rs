@@ -110,7 +110,7 @@ impl Scanner for Trivy {
             path_str.as_str(),
         ];
 
-        crate::scanner::run_command_with_timeout(&self.binary, &args, 120).await
+        crate::scanner::run_command_with_timeout_lenient(&self.binary, &args, 120).await
     }
 
     fn parse_output(&self, raw: &[u8]) -> Result<Vec<CanonicalFinding>, ScannerError> {

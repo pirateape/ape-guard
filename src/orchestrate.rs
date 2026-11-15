@@ -32,8 +32,8 @@ use crate::report;
 use crate::scanner::{
     aws_s3::AwsS3Scanner, checkov::Checkov, container::ContainerScanner, context_drift,
     dast::DastScanner, gitleaks::Gitleaks, mcp_security::McpScanner, semgrep::Semgrep, syft::Syft,
-    terraform::TerraformScanner, tls::TlsScanner, trivy::Trivy, trufflehog::Trufflehog, Scanner,
-    ScannerResult,
+    terraform::TerraformScanner, tls::TlsScanner, trivy::Trivy, trufflehog::Trufflehog,
+    zap::ZapScanner, Scanner, ScannerResult,
 };
 use crate::score;
 use crate::stride;
@@ -41,6 +41,7 @@ use crate::stride;
 /// The output of a successful scan — all data needed by main.rs for reporting.
 #[expect(dead_code)]
 pub(crate) struct ScanOutput {
+    pub scan_id: String,
     pub findings: Vec<find::CanonicalFinding>,
     pub findings_jsonl_path: PathBuf,
     pub started_at: String,
@@ -57,7 +58,6 @@ pub(crate) struct ScanOutput {
 }
 
 /// Arguments for a scan operation, grouped to avoid too-many-arguments lint
-#[expect(dead_code)]
 pub(crate) struct ScanArgs<'a> {
     pub target: &'a str,
     pub layers: &'a [u8],
@@ -66,9 +66,11 @@ pub(crate) struct ScanArgs<'a> {
     pub output_dir: &'a str,
     pub no_cache: bool,
     pub quiet: bool,
+    #[expect(dead_code)] // Handled in main.rs before constructing ScanArgs
     pub ci: bool,
     pub resume: bool,
     pub grade: bool,
+    #[expect(dead_code)] // Context drift now runs via the Scanner trait impl
     pub context_drift: bool,
     pub stride: bool,
     pub policy: bool,
@@ -143,6 +145,52 @@ pub(crate) fn load_completed_scanners(
     Ok(completed)
 }
 
+/// Load persisted findings for scanners that completed in a previous run.
+///
+/// Complements `load_completed_scanners`: each completed scanner also wrote one
+/// JSONL line per finding (`"status": "finding"`), which is reloaded here so a
+/// resumed scan rebuilds the full finding set instead of an empty report.
+pub(crate) fn load_previous_findings(
+    path: &std::path::Path,
+    completed: &std::collections::HashSet<String>,
+) -> anyhow::Result<Vec<find::CanonicalFinding>> {
+    if !path.exists() || completed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let content = std::fs::read_to_string(path)?;
+    let mut findings = Vec::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) {
+            if entry["status"] == "finding" {
+                if let Some(scanner) = entry["scanner"].as_str() {
+                    if completed.contains(scanner) {
+                        match serde_json::from_value::<find::CanonicalFinding>(
+                            entry["finding"].clone(),
+                        ) {
+                            Ok(f) => findings.push(f),
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Resume mode: skipping malformed finding line for {}: {}",
+                                    scanner,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(findings)
+}
+
 /// Check if any findings exceed the fail-on threshold (for CI exit codes)
 fn check_fail_on(findings: &[find::CanonicalFinding], threshold: &cli::FailOnThreshold) -> bool {
     match threshold {
@@ -168,14 +216,14 @@ fn generate_summary_report(
     attack_chains: &[AttackChain],
     zt_scorecard: &ZeroTrustScorecard,
     output_dir: &Path,
+    scan_id: &str,
     report_types: &[cli::ReportType],
     formats: &[cli::OutputFormat],
     stride_result: Option<&stride::StrideResult>,
     policy_result: &policy::PolicyResult,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
-    let scan_id = format!("{:x}", sha2::Sha256::digest(started_at.as_bytes()));
     let summary = find::ScanSummary {
-        scan_id,
+        scan_id: scan_id.to_string(),
         timestamp: started_at.to_string(),
         target: target.to_string(),
         target_hash: format!("{:x}", sha2::Sha256::digest(target.as_bytes())),
@@ -274,23 +322,32 @@ pub(crate) async fn run_scan(
 
     let start = Instant::now();
     let started_at = chrono::Utc::now().to_rfc3339();
+    // Single canonical scan ID for this run — used by reports AND the cache so
+    // `report --snapshot <id>` / `compare <id>` work with the ID shown in reports.
+    let scan_id = format!("scan_{}", chrono::Utc::now().format("%Y%m%d_%H%M%S%3f"));
     let target_path = PathBuf::from(target);
     let output_path = PathBuf::from(output_dir);
     std::fs::create_dir_all(&output_path).ok();
 
     let findings_jsonl_path = output_path.join("found_findings.jsonl");
 
+    // Start a fresh JSONL unless resuming — stale entries from an earlier run
+    // would otherwise cause a later `--resume` to skip unrelated scanners.
+    if !resume {
+        let _ = std::fs::File::create(&findings_jsonl_path); // truncate
+    }
+
     tracing::info!("Starting scan: {}", target);
 
     // Initialize cache
     let cache = if no_cache {
-        cache::ScanCache::disabled()
+        cache::ScanCache::disabled()?
     } else if cfg.cache.enabled {
         let c = cache::ScanCache::open(&cfg.cache.path)?;
         let _ = c.enforce_ttl(cfg.cache.ttl_hours);
         c
     } else {
-        cache::ScanCache::disabled()
+        cache::ScanCache::disabled()?
     };
 
     // Collect scanners by layer
@@ -330,6 +387,7 @@ pub(crate) async fn run_scan(
             5 => {
                 if let Some(url) = &web_target {
                     scanners.push(Box::new(DastScanner::new(url)));
+                    scanners.push(Box::new(ZapScanner::new(url)));
                 }
             }
             6 => {
@@ -377,7 +435,9 @@ pub(crate) async fn run_scan(
         }
     }
 
-    // Resume: skip completed scanners
+    // Resume: skip completed scanners and remember which ones to reload
+    let mut resume_completed: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut resume_skipped_names: Vec<String> = Vec::new();
     if resume {
         match load_completed_scanners(&findings_jsonl_path) {
             Ok(completed) if !completed.is_empty() => {
@@ -386,7 +446,13 @@ pub(crate) async fn run_scan(
                     completed.len(),
                     completed
                 );
+                resume_skipped_names = scanners
+                    .iter()
+                    .filter(|s| completed.contains(s.name()))
+                    .map(|s| s.name().to_string())
+                    .collect();
                 scanners.retain(|s| !completed.contains(s.name()));
+                resume_completed = completed;
                 if scanners.is_empty() {
                     tracing::info!(
                         "All requested layers already completed — regenerating report from existing data."
@@ -411,11 +477,22 @@ pub(crate) async fn run_scan(
     let mut all_findings: Vec<find::CanonicalFinding> = Vec::new();
     let mut scanners_used: Vec<String> = Vec::new();
 
+    // Cap concurrent scanner processes: a full 12-layer scan with many
+    // containers would otherwise spawn dozens of simultaneous scanner binaries.
+    const MAX_CONCURRENT_SCANNERS: usize = 8;
+    let scanner_semaphore =
+        std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SCANNERS));
+
     let scan_results = join_all(scanners.iter().map(|s| {
         let name = s.name();
+        let semaphore = std::sync::Arc::clone(&scanner_semaphore);
+        let target = std::path::PathBuf::clone(&target_path);
         tracing::info!("Running scanner: {}", name);
-        async {
-            let result = s.scan(&target_path).await;
+        async move {
+            // Acquire inside the task: every task is spawned immediately, but
+            // only MAX_CONCURRENT_SCANNERS run their scanner at a time.
+            let _permit = semaphore.acquire_owned().await;
+            let result = s.scan(&target).await;
             (name.to_string(), result)
         }
     }))
@@ -455,6 +532,19 @@ pub(crate) async fn run_scan(
                 "timestamp": chrono::Utc::now().to_rfc3339(),
             });
             let _ = writeln!(file, "{}", entry);
+
+            // Persist each finding so --resume can reload results for skipped
+            // scanners instead of regenerating empty reports.
+            if let Ok(ScannerResult::Complete { findings, .. }) = &result {
+                for f in findings {
+                    let entry = serde_json::json!({
+                        "scanner": name,
+                        "status": "finding",
+                        "finding": f,
+                    });
+                    let _ = writeln!(file, "{}", entry);
+                }
+            }
         }
 
         match result {
@@ -473,58 +563,26 @@ pub(crate) async fn run_scan(
         }
     }
 
-    // Context Drift Detection (Layer 8)
-    if args.context_drift {
-        let drift_scanner = context_drift::ContextDriftScanner::new(&target_path);
-        let drift_result = drift_scanner.scan_drift();
-
-        match drift_result {
-            context_drift::DriftScanResult::Complete {
-                context_file_count,
-                total_claims,
-                drift_findings,
-                drift_counts,
-            } => {
-                let canonical = context_drift::drift_findings_to_canonical(&drift_findings);
-                let drift_count = canonical.len();
-
-                if drift_count > 0 {
-                    tracing::info!(
-                        "Context drift: {} files, {} claims, {} drifts (C:{}, H:{}, M:{}, L:{}, I:{})",
-                        context_file_count,
-                        total_claims,
-                        drift_count,
-                        drift_counts.critical,
-                        drift_counts.high,
-                        drift_counts.medium,
-                        drift_counts.low,
-                        drift_counts.info,
-                    );
-                } else if total_claims > 0 {
-                    tracing::info!(
-                        "Context drift: {} files, {} claims verified — no drift detected",
-                        context_file_count,
-                        total_claims,
-                    );
-                } else {
-                    tracing::info!(
-                        "Context drift: {} context files found but no extractable claims",
-                        context_file_count,
-                    );
+    // Reload findings for scanners skipped by --resume so the pipeline sees the
+    // full result set — otherwise resumed scans produce empty reports and a
+    // 0-finding cache entry.
+    if !resume_completed.is_empty() {
+        match load_previous_findings(&findings_jsonl_path, &resume_completed) {
+            Ok(previous) if !previous.is_empty() => {
+                tracing::info!(
+                    "Resume mode: reloaded {} findings from {} skipped scanner(s)",
+                    previous.len(),
+                    resume_skipped_names.len()
+                );
+                for name in &resume_skipped_names {
+                    if !scanners_used.contains(name) {
+                        scanners_used.push(name.clone());
+                    }
                 }
-
-                all_findings.extend(canonical);
+                all_findings.extend(previous);
             }
-            context_drift::DriftScanResult::NoContextFiles => {
-                tracing::info!(
-                    "Context drift: no AGENTS.md, CLAUDE.md, or .cursor/rules files found"
-                );
-            }
-            context_drift::DriftScanResult::NoClaims => {
-                tracing::info!(
-                    "Context drift: context files found but no claims could be extracted"
-                );
-            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("Resume mode: could not reload previous findings: {}", e),
         }
     }
 
@@ -545,7 +603,7 @@ pub(crate) async fn run_scan(
         },
     );
     if reachability_result.enabled {
-        reachability::apply_reachability(&mut final_findings, &reachability_result);
+        reachability::apply_reachability(&mut final_findings, &reachability_result, &target_path);
     }
 
     // False-positive suppression filters
@@ -591,6 +649,16 @@ pub(crate) async fn run_scan(
                 counts.needs_review,
             );
         }
+        // Drop findings the grader just rejected. The FP filter's grade stage
+        // ran before grading, so this run's verdicts were not visible to it.
+        let (post_grade_findings, rejected) = filter::apply_grade_rejection(final_findings);
+        if rejected > 0 {
+            tracing::info!(
+                "Grade rejection removed {} grader-rejected findings",
+                rejected
+            );
+        }
+        final_findings = post_grade_findings;
     }
 
     // Zero Trust scorecard (computed before severity filter so it reflects full findings)
@@ -686,6 +754,7 @@ pub(crate) async fn run_scan(
         &attack_chains,
         &zt_scorecard,
         &output_path,
+        &scan_id,
         &args.report_types,
         &args.formats,
         stride_result.as_ref(),
@@ -714,6 +783,7 @@ pub(crate) async fn run_scan(
     quiet_println!(args.quiet, "");
 
     Ok(ScanOutput {
+        scan_id,
         findings: final_findings,
         findings_jsonl_path,
         started_at,
@@ -728,4 +798,187 @@ pub(crate) async fn run_scan(
         fail_threshold_reached,
         cache,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::find::ScannerType;
+
+    fn sample_finding(id: &str, scanner: ScannerType) -> find::CanonicalFinding {
+        find::CanonicalFinding {
+            id: id.to_string(),
+            scanner,
+            scanner_version: None,
+            rule_id: "test-rule".to_string(),
+            severity: find::Severity::High,
+            confidence: find::Confidence::Firm,
+            title: "Test finding".to_string(),
+            description: "desc".to_string(),
+            location: find::FindingLocation {
+                file: std::path::PathBuf::from("src/main.rs"),
+                line: Some(1),
+                column: None,
+                commit: None,
+                author: None,
+                snippet: None,
+            },
+            cwe: None,
+            cvss: None,
+            remediation: None,
+            fix_effort: None,
+            evidence: None,
+            tags: vec![],
+            zt_pillars: vec![],
+            cross_refs: vec![],
+            grade: None,
+            risk_score: None,
+            reachable: None,
+        }
+    }
+
+    /// Write a found_findings.jsonl with a completed status line and finding lines.
+    fn write_jsonl(path: &std::path::Path, scanner: &str, findings: &[find::CanonicalFinding]) {
+        use std::io::Write;
+        let mut file = std::fs::File::create(path).expect("test: create jsonl");
+        let status = serde_json::json!({
+            "scanner": scanner,
+            "status": "complete",
+            "finding_count": findings.len(),
+            "timestamp": "2026-01-01T00:00:00Z",
+        });
+        writeln!(file, "{}", status).expect("test: write status line");
+        for f in findings {
+            let entry = serde_json::json!({
+                "scanner": scanner,
+                "status": "finding",
+                "finding": f,
+            });
+            writeln!(file, "{}", entry).expect("test: write finding line");
+        }
+    }
+
+    #[test]
+    fn test_load_completed_scanners_reads_status_lines() {
+        let tmp = tempfile::tempdir().expect("test: tempdir");
+        let path = tmp.path().join("found_findings.jsonl");
+        write_jsonl(
+            &path,
+            "gitleaks",
+            &[sample_finding("F-1", ScannerType::Gitleaks)],
+        );
+
+        let completed = load_completed_scanners(&path).expect("load completed");
+        assert!(completed.contains("gitleaks"));
+        assert!(!completed.contains("semgrep"));
+    }
+
+    #[test]
+    fn test_load_completed_scanners_missing_file() {
+        let tmp = tempfile::tempdir().expect("test: tempdir");
+        let path = tmp.path().join("does-not-exist.jsonl");
+        let completed = load_completed_scanners(&path).expect("load completed");
+        assert!(completed.is_empty());
+    }
+
+    #[test]
+    fn test_load_previous_findings_returns_completed_scanner_findings() {
+        let tmp = tempfile::tempdir().expect("test: tempdir");
+        let path = tmp.path().join("found_findings.jsonl");
+        let findings = vec![
+            sample_finding("F-1", ScannerType::Gitleaks),
+            sample_finding("F-2", ScannerType::Gitleaks),
+        ];
+        write_jsonl(&path, "gitleaks", &findings);
+
+        let mut completed = std::collections::HashSet::new();
+        completed.insert("gitleaks".to_string());
+
+        let reloaded = load_previous_findings(&path, &completed).expect("reload findings");
+        assert_eq!(reloaded.len(), 2);
+        assert_eq!(reloaded[0].id, "F-1");
+        assert_eq!(reloaded[1].id, "F-2");
+        assert!(matches!(reloaded[0].scanner, ScannerType::Gitleaks));
+    }
+
+    #[test]
+    fn test_load_previous_findings_skips_uncompleted_scanners() {
+        let tmp = tempfile::tempdir().expect("test: tempdir");
+        let path = tmp.path().join("found_findings.jsonl");
+        write_jsonl(
+            &path,
+            "gitleaks",
+            &[sample_finding("F-1", ScannerType::Gitleaks)],
+        );
+
+        // semgrep completed, but the JSONL only has gitleaks findings
+        let mut completed = std::collections::HashSet::new();
+        completed.insert("semgrep".to_string());
+
+        let reloaded = load_previous_findings(&path, &completed).expect("reload findings");
+        assert!(reloaded.is_empty());
+    }
+
+    #[test]
+    fn test_load_previous_findings_empty_completed_set() {
+        let tmp = tempfile::tempdir().expect("test: tempdir");
+        let path = tmp.path().join("found_findings.jsonl");
+        write_jsonl(
+            &path,
+            "gitleaks",
+            &[sample_finding("F-1", ScannerType::Gitleaks)],
+        );
+
+        let reloaded =
+            load_previous_findings(&path, &std::collections::HashSet::new()).expect("reload");
+        assert!(reloaded.is_empty());
+    }
+
+    #[test]
+    fn test_load_previous_findings_roundtrips_all_fields() {
+        let tmp = tempfile::tempdir().expect("test: tempdir");
+        let path = tmp.path().join("found_findings.jsonl");
+
+        let mut original = sample_finding("F-1", ScannerType::Semgrep);
+        original.severity = find::Severity::Critical;
+        original.cwe = Some("CWE-79".to_string());
+        original.zt_pillars = vec!["endpoints".to_string()];
+        original.reachable = Some(true);
+
+        write_jsonl(&path, "semgrep", std::slice::from_ref(&original));
+
+        let mut completed = std::collections::HashSet::new();
+        completed.insert("semgrep".to_string());
+        let reloaded = load_previous_findings(&path, &completed).expect("reload");
+        assert_eq!(reloaded.len(), 1);
+        assert_eq!(reloaded[0].severity, find::Severity::Critical);
+        assert_eq!(reloaded[0].cwe.as_deref(), Some("CWE-79"));
+        assert_eq!(reloaded[0].zt_pillars, vec!["endpoints"]);
+        assert_eq!(reloaded[0].reachable, Some(true));
+    }
+
+    #[test]
+    fn test_jsonl_roundtrip_survives_malformed_lines() {
+        let tmp = tempfile::tempdir().expect("test: tempdir");
+        let path = tmp.path().join("found_findings.jsonl");
+        use std::io::Write;
+        let mut file = std::fs::File::create(&path).expect("test: create jsonl");
+        writeln!(file, "{{ not valid json").expect("test: write junk");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "scanner": "gitleaks",
+                "status": "finding",
+                "finding": sample_finding("F-1", ScannerType::Gitleaks),
+            })
+        )
+        .expect("test: write finding");
+        drop(file);
+
+        let mut completed = std::collections::HashSet::new();
+        completed.insert("gitleaks".to_string());
+        let reloaded = load_previous_findings(&path, &completed).expect("reload");
+        assert_eq!(reloaded.len(), 1);
+    }
 }

@@ -164,6 +164,22 @@ pub fn apply_fp_filters(
     (findings, stats)
 }
 
+/// Post-grading pass: drop findings the adversarial grader rejected.
+///
+/// The main FP filter (stage 4) runs *before* grading in the pipeline, so this
+/// run's grade verdicts are not visible to it. This pass is applied after
+/// `--grade` so proven false positives never reach reports, the ZT scorecard,
+/// or CI fail-on checks. Returns the surviving findings and the number dropped.
+pub fn apply_grade_rejection(findings: Vec<CanonicalFinding>) -> (Vec<CanonicalFinding>, usize) {
+    let before = findings.len();
+    let surviving: Vec<CanonicalFinding> = findings
+        .into_iter()
+        .filter(|f| !matches!(&f.grade, Some(GradeVerdict::Rejected { .. })))
+        .collect();
+    let rejected = before - surviving.len();
+    (surviving, rejected)
+}
+
 /// Info or Low severity (used by stages 2 and 3).
 fn is_low_severity(f: &CanonicalFinding) -> bool {
     matches!(f.severity, Severity::Info | Severity::Low)
@@ -422,6 +438,49 @@ mod tests {
         assert_eq!(keep.len(), 1);
         assert_eq!(keep[0].id, "1");
         assert_eq!(stats.grade_rejected, 1);
+    }
+
+    // --- Post-grading grade rejection pass ---
+
+    #[test]
+    fn test_apply_grade_rejection_drops_only_rejected() {
+        let rejected = GradeVerdict::Rejected {
+            reasoning: "False positive".into(),
+            reason_category: crate::find::RejectReason::FalsePositive,
+        };
+        let confirmed = GradeVerdict::Confirmed {
+            confidence: 0.9,
+            reasoning: "real".into(),
+        };
+        let findings = vec![
+            make_finding("1", Severity::High, "src/main.rs", vec![], None),
+            make_finding(
+                "2",
+                Severity::Critical,
+                "src/main.rs",
+                vec![],
+                Some(rejected),
+            ),
+            make_finding(
+                "3",
+                Severity::Medium,
+                "src/main.rs",
+                vec![],
+                Some(confirmed),
+            ),
+        ];
+        let (keep, rejected_count) = apply_grade_rejection(findings);
+        assert_eq!(rejected_count, 1);
+        assert_eq!(keep.len(), 2);
+        assert_eq!(keep[0].id, "1");
+        assert_eq!(keep[1].id, "3");
+    }
+
+    #[test]
+    fn test_apply_grade_rejection_empty() {
+        let (keep, rejected_count) = apply_grade_rejection(vec![]);
+        assert!(keep.is_empty());
+        assert_eq!(rejected_count, 0);
     }
 
     // --- Test stage 5: confidence threshold ---

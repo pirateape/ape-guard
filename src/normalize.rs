@@ -230,6 +230,35 @@ const GITLEAKS_SEVERITY_MAP: &[(&str, Severity)] = &[
     ("asana-token", Severity::Medium),
 ];
 
+/// Check whether `keyword` occurs in `text` bounded by non-alphanumeric
+/// characters (or string boundaries).
+///
+/// Prevents substring false matches in the ZT mapping tables: `"ot "` must not
+/// match `"not "`, `"port"` must not match `"important"`, `"key"` must not
+/// match `"monkey"`, `"api"` must not match `"rapid"`. Multi-word keywords
+/// (e.g. `"prompt injection"`) work naturally — their internal spaces are part
+/// of the keyword.
+fn keyword_match(text: &str, keyword: &str) -> bool {
+    let keyword = keyword.trim();
+    if keyword.is_empty() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    let kw_len = keyword.len();
+    let mut search_from = 0;
+    while let Some(pos) = text[search_from..].find(keyword) {
+        let abs = search_from + pos;
+        let end = abs + kw_len;
+        let before_ok = abs == 0 || !bytes[abs - 1].is_ascii_alphanumeric();
+        let after_ok = end == bytes.len() || !bytes[end].is_ascii_alphanumeric();
+        if before_ok && after_ok {
+            return true;
+        }
+        search_from = abs + 1;
+    }
+    false
+}
+
 /// Normalize a batch of findings: enrich with ZT mappings, cross-reference, tag
 pub fn normalize_findings(findings: &mut [CanonicalFinding]) {
     for finding in findings.iter_mut() {
@@ -263,7 +292,9 @@ pub fn normalize_findings(findings: &mut [CanonicalFinding]) {
         let combined = format!("{} {}", rule_lower, title_lower);
 
         for (keyword, pillar) in ZT_MAPPINGS {
-            if combined.contains(keyword) && !finding.zt_pillars.contains(&pillar.to_string()) {
+            if keyword_match(&combined, keyword)
+                && !finding.zt_pillars.contains(&pillar.to_string())
+            {
                 finding.zt_pillars.push(pillar.to_string());
             }
         }
@@ -600,6 +631,46 @@ mod tests {
             .filter(|p| *p == "identity")
             .count();
         assert_eq!(identity_count, 1);
+    }
+
+    #[test]
+    fn test_keyword_match_boundaries() {
+        // Substring false matches must be rejected
+        assert!(!keyword_match("container should not run as root", "ot "));
+        assert!(!keyword_match("important", "port")); // "important" contains port
+        assert!(keyword_match("important open port", "port")); // standalone "port" is a real match
+        assert!(!keyword_match("monkey business", "key"));
+        assert!(!keyword_match("keyboard layout", "key"));
+        assert!(!keyword_match("capital", "api")); // "capital" contains api
+        assert!(!keyword_match("rapidity", "api"));
+        assert!(!keyword_match("mercer street", "rce"));
+
+        // Genuine matches must still be accepted
+        assert!(keyword_match("open port 8080", "port"));
+        assert!(keyword_match("api key exposed", "api"));
+        assert!(keyword_match("private key found", "key"));
+        assert!(keyword_match("ot system unmanaged", "ot "));
+        assert!(keyword_match("prompt injection risk", "prompt injection"));
+        assert!(keyword_match("keyboard", "keyboard"));
+        // Boundary at string start/end
+        assert!(keyword_match("key", "key"));
+        assert!(keyword_match("token", "token"));
+    }
+
+    #[test]
+    fn test_zt_mapping_no_false_ot_match() {
+        // "should not run" must NOT map to the iot_ot pillar ("ot " false match)
+        let mut findings = vec![make_finding(
+            "1",
+            "trivy-misconfig-001",
+            "Container should not run as root",
+        )];
+        normalize_findings(&mut findings);
+        assert!(
+            !findings[0].zt_pillars.contains(&"iot_ot".to_string()),
+            "'not' must not match the 'ot ' keyword, got: {:?}",
+            findings[0].zt_pillars
+        );
     }
 
     #[test]

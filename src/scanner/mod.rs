@@ -82,7 +82,13 @@ pub async fn run_command_with_timeout(
     args: &[&str],
     timeout_secs: u64,
 ) -> Result<Vec<u8>, ScannerError> {
-    let cmd = tokio::process::Command::new(binary).args(args).output();
+    // kill_on_drop: on timeout the `output()` future is dropped by
+    // tokio::time::timeout — without this the child scanner process would be
+    // orphaned and keep running (Trivy DB downloads, long DAST runs, …).
+    let cmd = tokio::process::Command::new(binary)
+        .args(args)
+        .kill_on_drop(true)
+        .output();
 
     let timeout_dur = Duration::from_secs(timeout_secs);
     match tokio::time::timeout(timeout_dur, cmd).await {
@@ -94,6 +100,31 @@ pub async fn run_command_with_timeout(
                 Err(ScannerError::ExecutionFailed(stderr.trim().to_string()))
             }
         }
+        Ok(Err(e)) => Err(ScannerError::Io(e)),
+        Err(_) => Err(ScannerError::Timeout(timeout_secs)),
+    }
+}
+
+/// Run a command with a timeout, returning stdout even on non-zero exit.
+///
+/// Some scanners (Semgrep, Trivy) emit findings to stdout and exit with code 1
+/// when issues are found. We still want to capture that output rather than
+/// treating it as a failed execution.
+pub async fn run_command_with_timeout_lenient(
+    binary: &str,
+    args: &[&str],
+    timeout_secs: u64,
+) -> Result<Vec<u8>, ScannerError> {
+    // kill_on_drop: see run_command_with_timeout — prevents orphaned children
+    // when the timeout fires.
+    let cmd = tokio::process::Command::new(binary)
+        .args(args)
+        .kill_on_drop(true)
+        .output();
+
+    let timeout_dur = Duration::from_secs(timeout_secs);
+    match tokio::time::timeout(timeout_dur, cmd).await {
+        Ok(Ok(output)) => Ok(output.stdout),
         Ok(Err(e)) => Err(ScannerError::Io(e)),
         Err(_) => Err(ScannerError::Timeout(timeout_secs)),
     }
@@ -242,3 +273,4 @@ pub mod terraform;
 pub mod tls;
 pub mod trivy;
 pub mod trufflehog;
+pub mod zap;
