@@ -93,7 +93,7 @@ jobs:
           category: apeguard-layers-8-12
       - name: Upload reports artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: apeguard-reports
           path: .apeguard/reports*
@@ -185,7 +185,7 @@ jobs:
             --output results.json 2>&1 || echo "red-team completed with findings"
       - name: Upload redteam report
         if: always() && env.ARDENTKEY_ENDPOINT != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: redteam-report
           path: results.json
