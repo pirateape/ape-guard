@@ -74,6 +74,13 @@ ignore = [
     # serde_yaml, which we use solely to parse local ApeGuard config files. No known
     # vulnerability; revisit when a maintained serde-based YAML parser lands.
     { id = "RUSTSEC-2024-0449", reason = "unmaintained transitively via serde_yaml; local config parsing only, no known vulnerability" },
+    # chrono is unmaintained (RUSTSEC-2026-0543). Used for timestamps and
+    # TTL calculations only; no known vulnerability. Migration to `jiff` or
+    # `time` is a separate effort tracked outside this change.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; timestamps/TTL only, no known vulnerability; migration to jiff/time planned" },
+    # chrono-tz is unmaintained (same advisory family as chrono RUSTSEC-2026-0543).
+    { id = "RUSTSEC-2026-0555", reason = "chrono-tz unmaintained; only used for timezone handling, no known vulnerability" },
+    { id = "RUSTSEC-2026-0559", reason = "chrono-tz-build unmaintained; build-time only, no known vulnerability" },
     #"RUSTSEC-0000-0000",
     #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
     #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish

@@ -116,15 +116,30 @@ impl ScanCache {
         }
 
         let mut stmt = self.conn.prepare(
-            "SELECT scan_id, findings_snapshot FROM scan_history ORDER BY started_at DESC LIMIT 1",
+            "SELECT scan_id, findings_snapshot, started_at FROM scan_history ORDER BY started_at DESC LIMIT 1",
         )?;
 
-        let result: Option<(String, String)> = stmt
-            .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))
+        let result: Option<(String, String, String)> = stmt
+            .query_row([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
             .ok();
 
         match result {
-            Some((scan_id, json)) => {
+            Some((scan_id, json, started_at)) => {
+                // Defense against cache poisoning (F-005): a malicious repo can
+                // pre-seed a cache DB with a far-future started_at so its row
+                // always wins get_latest. Refuse rows whose started_at is in the
+                // future by more than a small clock-skew tolerance.
+                if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(&started_at) {
+                    let now = chrono::Utc::now();
+                    if parsed > now + chrono::Duration::minutes(5) {
+                        tracing::warn!(
+                            "Cache: ignoring scan '{}' with future started_at {} (possible cache poisoning)",
+                            scan_id,
+                            started_at
+                        );
+                        return Ok(None);
+                    }
+                }
                 let findings: Vec<CanonicalFinding> = serde_json::from_str(&json)?;
                 Ok(Some((scan_id, findings)))
             }

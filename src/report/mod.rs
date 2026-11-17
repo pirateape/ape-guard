@@ -118,15 +118,15 @@ pub fn generate_report(
             EnrichedFinding {
                 id: &f.id,
                 scanner: &f.scanner,
-                rule_id: &f.rule_id,
+                rule_id: markdown_escape(&f.rule_id),
                 severity: &f.severity,
-                title: &f.title,
-                description: &f.description,
+                title: markdown_escape(&f.title),
+                description: markdown_escape(&f.description),
                 file: &f.location.file,
                 line: f.location.line,
                 cwe: f.cwe.as_deref(),
                 cvss: f.cvss,
-                remediation: f.remediation.as_deref(),
+                remediation: f.remediation.as_deref().map(markdown_escape),
                 zt_pillars: &f.zt_pillars,
                 mitre_tactics: mitre,
                 cross_refs: format_cross_refs(&f.cross_refs),
@@ -220,18 +220,42 @@ pub fn generate_report(
 struct EnrichedFinding<'a> {
     id: &'a str,
     scanner: &'a crate::find::ScannerType,
-    rule_id: &'a str,
+    rule_id: String,
     severity: &'a crate::find::Severity,
-    title: &'a str,
-    description: &'a str,
+    title: String,
+    description: String,
     file: &'a std::path::Path,
     line: Option<u32>,
     cwe: Option<&'a str>,
     cvss: Option<f32>,
-    remediation: Option<&'a str>,
+    remediation: Option<String>,
     zt_pillars: &'a [String],
     mitre_tactics: Vec<String>,
     cross_refs: Vec<String>,
+}
+
+/// Escape markdown-significant characters in a string so that untrusted
+/// finding fields (title, description, remediation, rule_id) cannot be
+/// interpreted as markup (links, images, code, headings) when rendered in
+/// GitHub/VSCode markdown viewers. Backticks, brackets, parens and angle
+/// brackets are the characters that form markdown structure.
+fn markdown_escape(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '`' => "\\`".to_string(),
+            '[' => "\\[".to_string(),
+            ']' => "\\]".to_string(),
+            '(' => "\\(".to_string(),
+            ')' => "\\)".to_string(),
+            '<' => "\\<".to_string(),
+            '>' => "\\>".to_string(),
+            '*' => "\\*".to_string(),
+            '_' => "\\_".to_string(),
+            '#' => "\\#".to_string(),
+            '!' => "\\!".to_string(),
+            _ => c.to_string(),
+        })
+        .collect()
 }
 
 // Helper to format cross references for display
@@ -749,15 +773,15 @@ pub fn generate_html_report(
             EnrichedFinding {
                 id: &f.id,
                 scanner: &f.scanner,
-                rule_id: &f.rule_id,
+                rule_id: f.rule_id.clone(),
                 severity: &f.severity,
-                title: &f.title,
-                description: &f.description,
+                title: f.title.clone(),
+                description: f.description.clone(),
                 file: &f.location.file,
                 line: f.location.line,
                 cwe: f.cwe.as_deref(),
                 cvss: f.cvss,
-                remediation: f.remediation.as_deref(),
+                remediation: f.remediation.clone(),
                 zt_pillars: &f.zt_pillars,
                 mitre_tactics: mitre,
                 cross_refs: format_cross_refs(&f.cross_refs),

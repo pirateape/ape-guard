@@ -158,6 +158,41 @@ pub struct ReportConfig {
     pub types: Vec<String>,
 }
 
+/// Resolve a user-level cache directory (XDG on Linux, ~/Library/Caches on
+/// macOS, %LOCALAPPDATA% on Windows). Falls back to None so the caller can
+/// choose a safe default. Used so a scanned repository cannot pre-seed the
+/// cache DB (F-005).
+fn user_cache_dir() -> Option<PathBuf> {
+    if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
+        if !xdg.is_empty() {
+            return Some(PathBuf::from(xdg).join("apeguard"));
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            #[cfg(target_os = "macos")]
+            {
+                return Some(
+                    PathBuf::from(home)
+                        .join("Library")
+                        .join("Caches")
+                        .join("apeguard"),
+                );
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Some(PathBuf::from(home).join(".cache").join("apeguard"));
+            }
+        }
+    }
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        if !local.is_empty() {
+            return Some(PathBuf::from(local).join("apeguard").join("cache"));
+        }
+    }
+    None
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -173,7 +208,10 @@ impl Default for Config {
             },
             cache: CacheConfig {
                 enabled: true,
-                path: PathBuf::from(".apeguard/cache"),
+                // User-level cache (F-005): a malicious repository must not be
+                // able to pre-seed a cache DB inside the scanned tree. Falls
+                // back to .apeguard/cache only if HOME is unavailable.
+                path: user_cache_dir().unwrap_or_else(|| PathBuf::from(".apeguard/cache")),
                 ttl_hours: 24,
                 store_findings: true,
             },
@@ -209,19 +247,59 @@ pub fn load(args: &cli::Args) -> anyhow::Result<Config> {
             merge(&mut cfg, file_cfg);
         }
     } else {
-        // Auto-discover .apeguard.yaml in current directory
-        let auto_paths = [
-            PathBuf::from(".apeguard.yaml"),
-            PathBuf::from(".apeguard/config.yaml"),
-            PathBuf::from("apeguard.yaml"),
-        ];
-        for p in &auto_paths {
+        // User-level config discovery (NOT the scanned directory's CWD).
+        // A malicious repository must not be able to control execution by
+        // committing a .apeguard.yaml with binaries.* pointing at an
+        // attacker-controlled executable (F-001, F-002). Only the user's home
+        // directory is consulted; the scanned repo's CWD is never trusted.
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .ok()
+            .map(PathBuf::from);
+        let user_paths: Vec<PathBuf> = home
+            .as_ref()
+            .map(|h| {
+                vec![
+                    h.join(".apeguard.yaml"),
+                    h.join(".apeguard").join("config.yaml"),
+                    h.join(".config").join("apeguard").join("config.yaml"),
+                ]
+            })
+            .unwrap_or_default();
+        for p in &user_paths {
             if p.exists() {
                 let contents = std::fs::read_to_string(p)?;
                 let file_cfg: Config = serde_yaml_ng::from_str(&contents)?;
                 merge(&mut cfg, file_cfg);
+                tracing::info!("Loaded user-level config from {}", p.display());
                 break;
             }
+        }
+        // If a .apeguard.yaml exists in CWD, warn loudly but do NOT load it.
+        for p in [
+            PathBuf::from(".apeguard.yaml"),
+            PathBuf::from(".apeguard/config.yaml"),
+            PathBuf::from("apeguard.yaml"),
+        ] {
+            if p.exists() {
+                tracing::warn!(
+                    "Ignoring repository-supplied config at {} — for security, \
+                     apeguard does not auto-load config from the scanned \
+                     directory. Use --config to load it explicitly.",
+                    p.display()
+                );
+            }
+        }
+        // Warn if a cache DB exists in the scanned directory (F-005): a
+        // malicious repo can pre-seed it to serve attacker-controlled findings.
+        let in_repo_cache = PathBuf::from(".apeguard").join("cache").join("apeguard.db");
+        if in_repo_cache.exists() {
+            tracing::warn!(
+                "A cache database exists at {} — this may have been supplied by \
+                 the repository. Cache results are NOT trusted; verify with \
+                 'apeguard cache stats' or delete the file.",
+                in_repo_cache.display()
+            );
         }
     }
 
