@@ -532,14 +532,17 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
             }
             2 => scanners.push(Box::new(Semgrep::with_binary(cfg.binaries.semgrep.clone()))),
             3 => {
-                scanners.push(Box::new(Trivy::with_mode(
+                scanners.push(Box::new(Trivy::with_mode_and_binary(
                     crate::scanner::trivy::TrivyMode::Vuln,
+                    cfg.binaries.trivy.clone(),
                 )));
-                scanners.push(Box::new(Trivy::with_mode(
+                scanners.push(Box::new(Trivy::with_mode_and_binary(
                     crate::scanner::trivy::TrivyMode::Secret,
+                    cfg.binaries.trivy.clone(),
                 )));
-                scanners.push(Box::new(Trivy::with_mode(
+                scanners.push(Box::new(Trivy::with_mode_and_binary(
                     crate::scanner::trivy::TrivyMode::Misconfig,
+                    cfg.binaries.trivy.clone(),
                 )));
             }
             4 => {
@@ -555,6 +558,7 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
                 if let Some(url) = web_target.as_deref() {
                     validate_mcp_web_target(url)?;
                     scanners.push(Box::new(DastScanner::new(url)));
+                    scanners.push(Box::new(crate::scanner::zap::ZapScanner::new(url)));
                 } else {
                     warnings.push("Layer 5 requested but no web target provided. Use arguments.web=\"https://example.com\".".to_string());
                 }
@@ -566,9 +570,11 @@ async fn handle_scan_tool(args: &Value) -> anyhow::Result<Value> {
                 scanners.push(Box::new(Syft::with_binary(cfg.binaries.syft.clone())));
             }
             8 => {
-                scanners.push(Box::new(context_drift::ContextDriftScanner::new(
-                    std::path::Path::new("."),
-                )));
+                scanners.push(Box::new(
+                    context_drift::ContextDriftScanner::new(std::path::Path::new("."))
+                        .with_unknown(cfg.context_drift.include_unknown)
+                        .with_max_findings(cfg.context_drift.max_findings),
+                ));
             }
             9 => {
                 scanners.push(Box::new(McpScanner::new(".apeguard/mcp-config.json")));

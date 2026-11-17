@@ -62,7 +62,6 @@ pub struct ContextDriftScanner {
     /// Root path to scan for context files and verify claims against
     root: PathBuf,
     /// Maximum number of findings to return
-    #[allow(dead_code)] // P3/P4: max_findings is set by builder but not yet read by scan_drift
     max_findings: usize,
     /// Whether to include "unverifiable" claims in results (default: false)
     include_unknown: bool,
@@ -70,7 +69,6 @@ pub struct ContextDriftScanner {
 
 impl ContextDriftScanner {
     /// Create a new context drift scanner
-    // P3/P4: scanner construction uses with_binary(); new() not wired
     pub fn new(root: &Path) -> Self {
         Self {
             root: root.to_path_buf(),
@@ -80,14 +78,12 @@ impl ContextDriftScanner {
     }
 
     /// Set whether to include unverifiable claims in results
-    #[expect(dead_code)] // P3/P4: builder method not yet used in scan pipeline
     pub fn with_unknown(mut self, include: bool) -> Self {
         self.include_unknown = include;
         self
     }
 
     /// Set maximum findings limit
-    #[expect(dead_code)] // P3/P4: builder method not yet used in scan pipeline
     pub fn with_max_findings(mut self, max: usize) -> Self {
         self.max_findings = max;
         self
@@ -121,6 +117,9 @@ impl ContextDriftScanner {
                 .filter(|df| matches!(df.verification, VerificationResult::Drifted { .. }))
                 .collect()
         };
+
+        // Enforce the configured maximum findings limit
+        let filtered: Vec<DriftFinding> = filtered.into_iter().take(self.max_findings).collect();
 
         // Count by severity
         let by_severity = count_by_severity(&filtered);

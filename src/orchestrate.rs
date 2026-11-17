@@ -398,9 +398,11 @@ pub(crate) async fn run_scan(
             }
             8 => {
                 // Layer 8: Context Drift Detection
-                scanners.push(Box::new(context_drift::ContextDriftScanner::new(
-                    Path::new("."),
-                )));
+                scanners.push(Box::new(
+                    context_drift::ContextDriftScanner::new(Path::new("."))
+                        .with_unknown(cfg.context_drift.include_unknown)
+                        .with_max_findings(cfg.context_drift.max_findings),
+                ));
             }
             9 => {
                 // Layer 9: MCP Security Scanner

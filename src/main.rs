@@ -262,10 +262,11 @@ async fn run_report(
         (sid, findings)
     };
 
-    // Get scan record metadata
+    // Get scan record metadata for the requested snapshot (not the latest,
+    // which may be a different scan when --snapshot <id> is used).
     let scan_record = cache
-        .get_latest_scan_record()?
-        .ok_or_else(|| anyhow::anyhow!("No scan records found in cache."))?;
+        .get_scan_record(Some(&scan_id))?
+        .ok_or_else(|| anyhow::anyhow!("Scan record '{}' not found in cache.", scan_id))?;
 
     // Rebuild scan summary
     let mut by_sev = find::FindingsBySeverity {
