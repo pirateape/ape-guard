@@ -154,6 +154,44 @@ fn validate_mcp_web_target(url: &str) -> anyhow::Result<()> {
         }
     }
 
+    // DNS-resolution check (F-006): a hostname that passes the string checks
+    // but resolves to a loopback/private IP must be refused. TOCTOU-prone
+    // (DNS can change between validation and request) — the robust fix is to
+    // pin the resolved IP in the HTTP client, but this raises the bar.
+    if host.parse::<std::net::IpAddr>().is_err() {
+        use std::net::ToSocketAddrs;
+        let addr_str = format!("{}:80", host);
+        if let Ok(mut addrs) = addr_str.to_socket_addrs() {
+            if let Some(sa) = addrs.next() {
+                let ip = sa.ip();
+                let blocked = match ip {
+                    std::net::IpAddr::V4(v4) => {
+                        v4.is_loopback()
+                            || v4.is_private()
+                            || v4.is_link_local()
+                            || v4.is_broadcast()
+                            || v4.is_unspecified()
+                    }
+                    std::net::IpAddr::V6(v6) => {
+                        v6.is_loopback()
+                            || v6.is_unspecified()
+                            || (v6.segments()[0] & 0xfe00) == 0xfc00
+                            || v6.to_ipv4_mapped().is_some_and(|v4| {
+                                v4.is_loopback() || v4.is_private() || v4.is_link_local()
+                            })
+                    }
+                };
+                if blocked {
+                    anyhow::bail!(
+                        "refusing SSRF web target: hostname '{}' resolves to non-public IP {}",
+                        host,
+                        ip
+                    );
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
