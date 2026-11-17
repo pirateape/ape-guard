@@ -26,6 +26,7 @@ impl Trivy {
         }
     }
 
+    #[expect(dead_code)] // P3/P4: convenience constructor; callers use with_mode_and_binary
     pub fn with_mode(mode: TrivyMode) -> Self {
         Trivy {
             binary: "trivy".to_string(),

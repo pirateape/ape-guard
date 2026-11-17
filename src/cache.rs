@@ -148,18 +148,29 @@ impl ScanCache {
     }
 
     /// Get the latest scan record metadata (without findings)
+    #[expect(dead_code)] // kept for backward compat; prefer get_scan_record(None)
     pub fn get_latest_scan_record(&self) -> anyhow::Result<Option<ScanRecord>> {
+        self.get_scan_record(None)
+    }
+
+    /// Get a scan record by ID, or the latest if `scan_id` is None.
+    pub fn get_scan_record(&self, scan_id: Option<&str>) -> anyhow::Result<Option<ScanRecord>> {
         if !self.enabled {
             return Ok(None);
         }
 
-        let mut stmt = self.conn.prepare(
+        let sql = if scan_id.is_some() {
             "SELECT scan_id, target, started_at, completed_at, total_findings, scanners_used
-             FROM scan_history ORDER BY started_at DESC LIMIT 1",
-        )?;
+             FROM scan_history WHERE scan_id = ?1"
+        } else {
+            "SELECT scan_id, target, started_at, completed_at, total_findings, scanners_used
+             FROM scan_history ORDER BY started_at DESC LIMIT 1"
+        };
 
-        let result = stmt
-            .query_row([], |row| {
+        let mut stmt = self.conn.prepare(sql)?;
+
+        let result = if let Some(id) = scan_id {
+            stmt.query_row(params![id], |row| {
                 Ok(ScanRecord {
                     scan_id: row.get(0)?,
                     target: row.get(1)?,
@@ -169,7 +180,20 @@ impl ScanCache {
                     scanners_used: row.get(5)?,
                 })
             })
-            .ok();
+            .ok()
+        } else {
+            stmt.query_row([], |row| {
+                Ok(ScanRecord {
+                    scan_id: row.get(0)?,
+                    target: row.get(1)?,
+                    started_at: row.get(2)?,
+                    completed_at: row.get(3)?,
+                    total_findings: row.get(4)?,
+                    scanners_used: row.get(5)?,
+                })
+            })
+            .ok()
+        };
 
         Ok(result)
     }
