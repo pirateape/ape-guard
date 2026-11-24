@@ -440,7 +440,14 @@ pub fn evaluate_policies(
     let policy_dir = &config.policy_dir;
 
     // Load policy files
-    let policies = load_policy_files(policy_dir);
+    let mut policies = load_policy_files(policy_dir);
+    if policies.is_empty() {
+        tracing::info!(
+            "No user policy files in '{}'; using built-in hardening pack (CIS Docker + NSA/CISA Kubernetes)",
+            policy_dir.display()
+        );
+        policies = crate::policy_pack::default_policies();
+    }
     let policies_loaded = policies.len();
     let policy_files: Vec<String> = policies.iter().map(|(name, _)| name.clone()).collect();
 
@@ -870,7 +877,14 @@ mod tests {
         let (result, policy_result) = evaluate_policies(findings, &config);
         assert_eq!(result.len(), 1);
         assert!(policy_result.enabled);
-        assert_eq!(policy_result.policies_loaded, 0);
+        assert_eq!(
+            policy_result.policies_loaded, 1,
+            "an empty policy dir must fall back to the built-in hardening pack"
+        );
+        assert_eq!(
+            policy_result.policy_files,
+            vec!["builtin/hardening.rego".to_string()]
+        );
     }
 
     #[test]
@@ -1041,5 +1055,171 @@ mod tests {
         // Finding F-001 should survive (no matching action)
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, "F-001");
+    }
+}
+
+#[cfg(test)]
+mod hardening_pack_tests {
+    use super::*;
+    use crate::find::{Confidence, FindingLocation, ScannerType};
+
+    fn finding(id: &str, rule_id: &str, title: &str, severity: Severity) -> CanonicalFinding {
+        CanonicalFinding {
+            id: id.to_string(),
+            scanner: ScannerType::Checkov,
+            scanner_version: None,
+            rule_id: rule_id.to_string(),
+            severity,
+            confidence: Confidence::Firm,
+            title: title.to_string(),
+            description: String::new(),
+            location: FindingLocation {
+                file: std::path::PathBuf::from("deploy.yaml"),
+                line: Some(12),
+                column: None,
+                commit: None,
+                author: None,
+                snippet: None,
+            },
+            cwe: None,
+            cvss: None,
+            remediation: None,
+            fix_effort: None,
+            evidence: None,
+            tags: Vec::new(),
+            zt_pillars: Vec::new(),
+            cross_refs: Vec::new(),
+            grade: None,
+            risk_score: None,
+            reachable: None,
+        }
+    }
+
+    fn enabled(dir: &str) -> PolicyConfig {
+        PolicyConfig {
+            enabled: true,
+            policy_dir: std::path::PathBuf::from(dir),
+        }
+    }
+
+    fn unique_tmp_dir(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir =
+            std::env::temp_dir().join(format!("apeguard-{}-{}-{}", tag, std::process::id(), nanos));
+        std::fs::create_dir_all(&dir).expect("create temp policy dir");
+        dir
+    }
+
+    #[test]
+    fn builtin_pack_loaded_when_policy_dir_missing() {
+        let findings = vec![finding(
+            "H-1",
+            "CKV_K8S_22",
+            "Ensure containers do not run in privileged mode",
+            Severity::Medium,
+        )];
+        let (out, result) = evaluate_policies(findings, &enabled("/nonexistent/apeguard/policies"));
+        assert_eq!(
+            result.policies_loaded, 1,
+            "built-in pack must load as fallback"
+        );
+        assert_eq!(
+            result.policy_files,
+            vec!["builtin/hardening.rego".to_string()]
+        );
+        assert!(result
+            .actions_applied
+            .iter()
+            .any(|a| a.finding_id == "H-1" && a.action == PolicyAction::Escalate));
+        assert_eq!(
+            out[0].severity,
+            Severity::Critical,
+            "privileged container must be escalated to Critical"
+        );
+        assert!(out[0].tags.iter().any(|t| t == "container-escape"));
+    }
+
+    #[test]
+    fn builtin_pack_ignores_non_container_findings() {
+        let findings = vec![finding(
+            "S-1",
+            "CKV_AWS_20",
+            "S3 bucket allows privileged public access",
+            Severity::Medium,
+        )];
+        let (out, result) = evaluate_policies(findings, &enabled("/nonexistent/apeguard/policies"));
+        assert_eq!(result.policies_loaded, 1);
+        assert!(
+            result.actions_applied.is_empty(),
+            "non container-config rules must not be touched"
+        );
+        assert_eq!(out[0].severity, Severity::Medium);
+        assert!(out[0].tags.is_empty());
+    }
+
+    #[test]
+    fn builtin_pack_escalates_pod_security_and_hygiene_tiers() {
+        let findings = vec![
+            finding(
+                "H-1",
+                "CKV_K8S_29",
+                "Ensure allowPrivilegeEscalation is false",
+                Severity::Low,
+            ),
+            finding(
+                "H-2",
+                "DS002",
+                "Specify a tag other than latest",
+                Severity::Low,
+            ),
+        ];
+        let (out, result) = evaluate_policies(findings, &enabled("/nonexistent/apeguard/policies"));
+        assert_eq!(result.escalated_count, 2);
+        let h1 = out
+            .iter()
+            .find(|f| f.id == "H-1")
+            .expect("H-1 must survive policy evaluation");
+        let h2 = out
+            .iter()
+            .find(|f| f.id == "H-2")
+            .expect("H-2 must survive policy evaluation");
+        assert_eq!(h1.severity, Severity::High);
+        assert_eq!(h2.severity, Severity::Medium);
+        assert!(h1.tags.iter().any(|t| t == "pod-security"));
+        assert!(h2.tags.iter().any(|t| t == "container-hygiene"));
+    }
+
+    #[test]
+    fn user_policy_pack_overrides_builtin() {
+        let dir = unique_tmp_dir("user-policy");
+        std::fs::write(
+            dir.join("custom.rego"),
+            "package apeguard\n\npolicy_actions := []\n",
+        )
+        .expect("write user policy");
+        let findings = vec![finding(
+            "H-1",
+            "CKV_K8S_22",
+            "privileged mode enabled",
+            Severity::Medium,
+        )];
+        let (out, result) = evaluate_policies(
+            findings,
+            &PolicyConfig {
+                enabled: true,
+                policy_dir: dir.clone(),
+            },
+        );
+        assert_eq!(result.policies_loaded, 1);
+        assert!(
+            !result.policy_files.iter().any(|f| f.contains("builtin/")),
+            "built-in pack must not compose with user policies"
+        );
+        assert!(result.actions_applied.is_empty());
+        assert_eq!(out[0].severity, Severity::Medium);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
