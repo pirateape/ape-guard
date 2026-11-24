@@ -25,6 +25,7 @@ pub(crate) mod orchestrate;
 
 pub(crate) mod llm;
 pub(crate) mod policy;
+pub(crate) mod policy_pack;
 
 use chrono::Utc;
 use sha2::Digest;
